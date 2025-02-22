@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 设置仓库地址
-REPO_URL="https://github.com/LogicNekoChan/autoadmin.git"
+REPO_URL="https://github.com/LogicNekoChan/autoserver.git"
 
 # 设置根目录下的目标文件夹名
 TARGET_DIR="/root/autoadmin"
