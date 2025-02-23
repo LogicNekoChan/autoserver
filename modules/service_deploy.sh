@@ -1,5 +1,5 @@
 #!/bin/bash
-# 服务选择部署模块 - 优化后版本
+# 服务选择部署模块 - 优化后版本 (修复 YAML 错误)
 
 # 服务列表及其对应的容器名称
 services=("watchtower" "xui" "nginx" "vaultwarden" "portainer")
@@ -193,12 +193,12 @@ networks:
     driver: bridge
 
 volumes:
-  xui_db:
-  xui_cert:
-  nginx_data:
-  letsencrypt:
-  vaultwarden_data:
-  portainer_data:
+  xui_db: {}
+  xui_cert: {}
+  nginx_data: {}
+  letsencrypt: {}
+  vaultwarden_data: {}
+  portainer_data: {}
 EOF
 
 echo "docker-compose.yml 配置文件已生成并更新！"
