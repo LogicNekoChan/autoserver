@@ -34,15 +34,21 @@ backup_container() {
     containers=($(docker ps --format "{{.Names}}"))
     selected_container=$(select_container "${containers[@]}")
     if [ -z "$selected_container" ]; then return; fi
-    
+
     echo "开始备份容器 $selected_container 的映射卷..."
     volume=$(docker inspect "$selected_container" | grep -Po '(?<="Source": ")[^"]+')
     if [ -z "$volume" ]; then
         echo "[ERROR] 未找到映射卷！"
         return
     fi
+
+    # 确保备份文件名合法
     backup_file="$BACKUP_DIR/${selected_container}_$(date +%F_%H%M%S).tar.gz"
-    tar -czvf "$backup_file" "$volume"
+    if ! tar -czvf "$backup_file" "$volume" 2>/dev/null; then
+        echo "[ERROR] 备份失败！"
+        return
+    fi
+
     echo "备份完成，文件保存在：$backup_file"
     log_message "容器 $selected_container 备份完成，备份文件：$backup_file"
 }
@@ -65,7 +71,13 @@ restore_container() {
     fi
     selected_backup=${backups[$((idx-1))]}
     echo "恢复备份文件：$selected_backup 到原路径（请确保目标目录可写）"
-    tar -xzvf "$selected_backup" -C /
+
+    # 确保恢复目录存在并且可以写入
+    if ! tar -xzvf "$selected_backup" -C / 2>/dev/null; then
+        echo "[ERROR] 恢复失败！"
+        return
+    fi
+
     log_message "恢复备份：$selected_backup"
 }
 
@@ -77,7 +89,11 @@ delete_container() {
     if [ -z "$selected_container" ]; then return; fi
 
     echo "删除容器：$selected_container"
-    docker rm -f "$selected_container"
+    if ! docker rm -f "$selected_container" 2>/dev/null; then
+        echo "[ERROR] 删除容器失败！"
+        return
+    fi
+
     log_message "容器 $selected_container 已删除"
 }
 
