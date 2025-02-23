@@ -70,7 +70,10 @@ quick_setup() {
     echo "1. 更新系统并安装基本依赖..."
     case $os_type in
         ubuntu | debian)
-            execute_sudo "apt update -y && apt install -y neofetch vim jq curl && apt upgrade -y"
+            # 修复 apt 命令的问题
+            execute_sudo "apt update -y"
+            execute_sudo "apt install -y neofetch vim jq curl"
+            execute_sudo "apt upgrade -y"
             ;;
         *)
             echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
@@ -155,7 +158,7 @@ setup_swap() {
     fi
 
     execute_sudo "swapoff -a"
-    execute_sudo "dd if=/dev/zero of=/swapfile bs=1M count=$swap_size"
+    execute_sudo "dd if=/dev/zero of=/swapfile bs=1M count=$swap_size status=progress"
     execute_sudo "chmod 600 /swapfile"
     execute_sudo "mkswap /swapfile"
     execute_sudo "swapon /swapfile"
@@ -207,4 +210,3 @@ pause() {
 
 # 脚本入口：调用系统维护菜单
 system_maintenance_menu
-
