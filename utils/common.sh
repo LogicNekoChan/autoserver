@@ -1,13 +1,14 @@
 #!/bin/bash
 # 公共函数库
 
-# 彩色输出
+# 输出信息
 function echo_info() {
-    echo -e "\033[32m[INFO]\033[0m $1"
+    echo "[INFO] $1"
 }
 
+# 输出错误信息
 function echo_error() {
-    echo -e "\033[31m[ERROR]\033[0m $1"
+    echo "[ERROR] $1"
 }
 
 # 检测操作系统类型
@@ -18,5 +19,35 @@ function detect_os() {
         echo "centos"
     else
         echo "unknown"
+    fi
+}
+
+# 判断命令是否存在
+function command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# 获取系统的内存总量（MB）
+function get_total_memory() {
+    if [[ -f /proc/meminfo ]]; then
+        grep MemTotal /proc/meminfo | awk '{print $2 / 1024 " MB"}'
+    else
+        echo "无法获取内存信息"
+    fi
+}
+
+# 获取系统的硬盘总量（GB）
+function get_total_disk() {
+    df -h --total | grep total | awk '{print $2}'
+}
+
+# 检查网络连接
+function check_network_connection() {
+    local host="$1"
+    ping -c 1 "$host" >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "网络连接正常"
+    else
+        echo "无法连接到 $host"
     fi
 }
