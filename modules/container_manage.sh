@@ -32,7 +32,8 @@ select_container() {
 backup_container() {
     echo "请选择需要备份的容器："
     containers=($(docker ps --format "{{.Names}}"))
-    selected_container=$(select_container "${containers[@]}")
+    containers_sorted=($(for c in "${containers[@]}"; do echo "$c"; done | sort))  # 按字母顺序排序容器
+    selected_container=$(select_container "${containers_sorted[@]}")
     if [ -z "$selected_container" ]; then return; fi
 
     echo "开始备份容器 $selected_container 的映射卷..."
@@ -87,26 +88,27 @@ delete_container() {
     
     # 获取所有容器的名称，包括运行中的和已停止的
     containers=($(docker ps -a --format "{{.Names}}"))
+    containers_sorted=($(for c in "${containers[@]}"; do echo "$c"; done | sort))  # 按字母顺序排序容器
     
     # 如果没有容器
-    if [ ${#containers[@]} -eq 0 ]; then
+    if [ ${#containers_sorted[@]} -eq 0 ]; then
         echo "[ERROR] 当前没有任何容器！"
         return
     fi
 
     # 列出容器供用户选择
-    for i in "${!containers[@]}"; do
-        echo "$((i+1)). ${containers[$i]}"
+    for i in "${!containers_sorted[@]}"; do
+        echo "$((i+1)). ${containers_sorted[$i]}"
     done
     
     # 选择容器
     read -p "请输入容器序号: " idx
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#containers[@]}" ]; then
+    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#containers_sorted[@]}" ]; then
         echo "[ERROR] 无效选择！"
         return
     fi
 
-    selected_container=${containers[$((idx-1))]}
+    selected_container=${containers_sorted[$((idx-1))]}
     echo "删除容器：$selected_container"
 
     # 删除容器
