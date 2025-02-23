@@ -23,7 +23,7 @@ AutoServer 是一个用于服务器自动化部署的工具，支持 Debian/Ubun
 
 
 本项目一键部署：
-'''
+```
 bash <(curl -fsSL https://github.com/LogicNekoChan/autoserver/raw/refs/heads/main/autoserver.sh)
-'''
+```
 
