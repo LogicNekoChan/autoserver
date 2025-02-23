@@ -2,7 +2,7 @@
 # 服务选择部署模块
 
 # 服务列表及其对应的容器名称
-services=("watchtower" "xui" "nginx" "vaultwarden" "portainer" "portainer_agent")
+services=("watchtower" "xui" "nginx" "vaultwarden" "portainer")
 
 echo "检测到以下服务："
 for i in "${!services[@]}"; do
@@ -39,24 +39,13 @@ case "$selected_service" in
     "portainer")
         echo "部署 Portainer - Docker 管理面板"
         docker run -d \
-          -p 9000:9000 \
-          --name portainer \
-          --restart=always \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          -v /var/lib/docker/volumes:/var/lib/docker/volumes \
-          -v /:/host \
-          portainer/portainer-ce:latest
-        ;;
-    "portainer_agent")
-        echo "部署 Portainer Agent - 代理服务"
-        docker run -d \
           -p 9001:9001 \
           --name portainer_agent \
           --restart=always \
           -v /var/run/docker.sock:/var/run/docker.sock \
           -v /var/lib/docker/volumes:/var/lib/docker/volumes \
           -v /:/host \
-          portainer/agent:latest
+          portainer/agent:2.21.5
         ;;
     *)
         echo "[ERROR] 无效服务选择！"
@@ -71,7 +60,13 @@ echo "确保虚拟网络和卷已经创建..."
 existing_networks=$(docker network ls --filter "name=root_mintcat" -q)
 if [ -n "$existing_networks" ]; then
     echo "检测到冲突网络 root_mintcat，正在删除..."
-    docker network rm root_mintcat
+    # 停止并断开所有与该网络相关的容器
+    containers=$(docker network inspect root_mintcat -f '{{range .Containers}}{{.Name}} {{end}}')
+    for container in $containers; do
+        docker network disconnect root_mintcat $container
+    done
+    # 尝试删除该网络，忽略错误
+    docker network rm root_mintcat >/dev/null 2>&1
     echo "冲突网络 root_mintcat 已删除。"
 fi
 
@@ -86,7 +81,7 @@ else
 fi
 
 # 创建卷
-declare -a volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data")
+declare -a volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data")
 for volume in "${volumes[@]}"; do
     docker volume inspect "$volume" >/dev/null 2>&1
     if [ $? -ne 0 ]; then
@@ -101,7 +96,7 @@ done
 echo "服务部署完成！"
 
 # 更新的 docker-compose.yml 配置
-cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
+cat <<EOF
 version: "3.8"
 
 services:
@@ -169,20 +164,6 @@ services:
     networks:
       - mintcat
 
-  # Portainer Agent - 代理服务
-  portainer_agent:
-    image: portainer/agent
-    container_name: portainer_agent
-    restart: unless-stopped
-    ports:
-      - "9001:9001"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker/volumes:/var/lib/docker/volumes
-      - /:/host
-    networks:
-      - mintcat
-
 networks:
   mintcat:
     driver: bridge
@@ -194,6 +175,6 @@ volumes:
   letsencrypt:
   vaultwarden_data:
   portainer_data:
-EOF  
+EOF
 
 echo "docker-compose.yml 配置文件已生成！"
