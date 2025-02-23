@@ -184,20 +184,35 @@ setup_ssh_key_auth() {
     echo "正在修改 SSH 配置..."
 
     # 禁用密码登录
-    execute_sudo "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+    if ! sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config; then
+        echo "[ERROR] 修改 PasswordAuthentication 配置失败。"
+        log_message "[ERROR] 修改 PasswordAuthentication 配置失败。"
+        return 1
+    fi
 
     # 检查并开启 root 登录
     if grep -q '^PermitRootLogin no' /etc/ssh/sshd_config || ! grep -q '^PermitRootLogin' /etc/ssh/sshd_config; then
         echo "当前不允许 root 登录，正在启用..."
-        execute_sudo "sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config"
+        if ! sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; then
+            echo "[ERROR] 修改 PermitRootLogin 配置失败。"
+            log_message "[ERROR] 修改 PermitRootLogin 配置失败。"
+            return 1
+        fi
     else
         echo "已允许 root 登录，无需修改。"
     fi
 
     # 重启 SSH 服务以应用配置
-    execute_sudo "systemctl restart sshd"
+    if ! sudo systemctl restart sshd; then
+        echo "[ERROR] 重启 SSH 服务失败。"
+        log_message "[ERROR] 重启 SSH 服务失败。"
+        return 1
+    fi
+
     echo "SSH 密钥登录已配置，密码登录已禁用，root 登录已启用。"
 }
+
+
 
 # 安装 Docker 和 Docker Compose
 install_docker() {
