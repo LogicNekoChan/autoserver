@@ -84,16 +84,38 @@ restore_container() {
 # 删除容器
 delete_container() {
     echo "请选择需要删除的容器："
+    
+    # 获取所有容器的名称，包括运行中的和已停止的
     containers=($(docker ps -a --format "{{.Names}}"))
-    selected_container=$(select_container "${containers[@]}")
-    if [ -z "$selected_container" ]; then return; fi
+    
+    # 如果没有容器
+    if [ ${#containers[@]} -eq 0 ]; then
+        echo "[ERROR] 当前没有任何容器！"
+        return
+    fi
 
+    # 列出容器供用户选择
+    for i in "${!containers[@]}"; do
+        echo "$((i+1)). ${containers[$i]}"
+    done
+    
+    # 选择容器
+    read -p "请输入容器序号: " idx
+    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#containers[@]}" ]; then
+        echo "[ERROR] 无效选择！"
+        return
+    fi
+
+    selected_container=${containers[$((idx-1))]}
     echo "删除容器：$selected_container"
+
+    # 删除容器
     if ! docker rm -f "$selected_container" 2>/dev/null; then
         echo "[ERROR] 删除容器失败！"
         return
     fi
 
+    echo "容器 $selected_container 已成功删除"
     log_message "容器 $selected_container 已删除"
 }
 
