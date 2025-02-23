@@ -31,12 +31,33 @@ select_container() {
 # 备份容器
 backup_container() {
     echo "请选择需要备份的容器："
+    
+    # 获取所有正在运行的容器名称
     containers=($(docker ps --format "{{.Names}}"))
-    containers_sorted=($(for c in "${containers[@]}"; do echo "$c"; done | sort))  # 按字母顺序排序容器
-    selected_container=$(select_container "${containers_sorted[@]}")
-    if [ -z "$selected_container" ]; then return; fi
+    
+    # 如果没有容器
+    if [ ${#containers[@]} -eq 0 ]; then
+        echo "[ERROR] 当前没有任何容器！"
+        return
+    fi
 
+    # 按编号列出容器
+    for i in "${!containers[@]}"; do
+        echo "$((i+1)). ${containers[$i]}"
+    done
+
+    # 用户选择容器
+    read -p "请输入容器序号: " idx
+    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#containers[@]}" ]; then
+        echo "[ERROR] 无效选择！"
+        return
+    fi
+
+    # 获取用户选择的容器
+    selected_container=${containers[$((idx-1))]}
     echo "开始备份容器 $selected_container 的映射卷..."
+
+    # 获取容器映射的卷路径
     volume=$(docker inspect "$selected_container" | grep -Po '(?<="Source": ")[^"]+')
     if [ -z "$volume" ]; then
         echo "[ERROR] 未找到映射卷！"
@@ -45,6 +66,8 @@ backup_container() {
 
     # 确保备份文件名合法
     backup_file="$BACKUP_DIR/${selected_container}_$(date +%F_%H%M%S).tar.gz"
+    
+    # 进行备份操作
     if ! tar -czvf "$backup_file" "$volume" 2>/dev/null; then
         echo "[ERROR] 备份失败！"
         return
