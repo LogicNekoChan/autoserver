@@ -118,5 +118,3 @@ restore_container_from_backup() {
     log_message "容器 $container_name 数据恢复完成，容器已启动。"
 }
 
-# 调用恢复容器函数
-restore_container_from_backup
