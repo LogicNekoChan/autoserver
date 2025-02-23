@@ -4,7 +4,7 @@
 REPO_URL="https://github.com/LogicNekoChan/autoserver.git"
 
 # 设置根目录下的目标文件夹名
-TARGET_DIR="/root/autoadmin"
+TARGET_DIR="/root/autoserver"
 
 # 检测是否安装了 git
 if ! command -v git &>/dev/null; then
@@ -17,7 +17,7 @@ fi
 # 切换到 root 用户的根目录
 cd /root || { echo "无法切换到根目录"; exit 1; }
 
-# 检查并删除现有的 autoadmin 文件夹
+# 检查并删除现有的 autoserver 文件夹
 if [ -d "$TARGET_DIR" ]; then
     echo "文件夹 $TARGET_DIR 已存在，正在删除..."
     sudo rm -rf "$TARGET_DIR"
@@ -36,7 +36,7 @@ sudo chmod -R 777 "$TARGET_DIR" || { echo "无法授予权限"; exit 1; }
 echo "确保目录所有者为 root 用户..."
 sudo chown -R root:root "$TARGET_DIR" || { echo "无法更改所有者"; exit 1; }
 
-# 进入 autoadmin 文件夹
+# 进入 autoserver 文件夹
 cd "$TARGET_DIR" || { echo "进入 $TARGET_DIR 失败"; exit 1; }
 
 # 确保 main.sh 存在并运行
