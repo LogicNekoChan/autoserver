@@ -2,7 +2,7 @@
 # 服务选择部署模块
 
 # 服务列表及其对应的容器名称
-services=("watchtower" "xui" "nginx" "vaultwarden")
+services=("watchtower" "xui" "nginx" "vaultwarden" "portainer")
 
 echo "检测到以下服务："
 for i in "${!services[@]}"; do
@@ -35,6 +35,17 @@ case "$selected_service" in
     "vaultwarden")
         echo "部署 Vaultwarden - 密码管理"
         docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d vaultwarden
+        ;;
+    "portainer")
+        echo "部署 Portainer - Docker 管理面板"
+        docker run -d \
+          -p 9001:9001 \
+          --name portainer_agent \
+          --restart=always \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+          -v /:/host \
+          portainer/agent:2.21.5
         ;;
     *)
         echo "[ERROR] 无效服务选择！"
@@ -133,6 +144,20 @@ services:
     networks:
       - mintcat
 
+  # Portainer - Docker 管理面板
+  portainer:
+    image: portainer/portainer-ce
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - mintcat
+
 networks:
   mintcat:
     driver: bridge
@@ -143,6 +168,7 @@ volumes:
   nginx_data:
   letsencrypt:
   vaultwarden_data:
+  portainer_data:
 EOF
 
 echo "docker-compose.yml 配置文件已生成！"
