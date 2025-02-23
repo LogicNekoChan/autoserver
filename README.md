@@ -22,16 +22,8 @@ AutoServer 是一个用于服务器自动化部署的工具，支持 Debian/Ubun
     └── common.sh           # 公共函数库（如日志、OS 检测等）
 
 
-本项目托管于 GitHub，点击下面链接即可访问代码：
-[https://github.com/LogicNekoChan/autoserver/tree/main](https://github.com/LogicNekoChan/autoserver/tree/main)
+本项目一键部署：
+'''
+bash <(curl -fsSL https://github.com/LogicNekoChan/autoserver/raw/refs/heads/main/autoserver.sh)
+'''
 
-## 部署前准备
-
-1. **安装 Git**  
-   确保服务器中已安装 Git，若未安装请先安装：
-   ```bash
-   # Debian/Ubuntu 系统安装 Git
-   sudo apt-get update && sudo apt-get install -y git
-
-   # CentOS 系统安装 Git
-   sudo yum install -y git
