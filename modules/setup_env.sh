@@ -201,21 +201,41 @@ setup_ssh_key_auth() {
 
 # 安装 Docker 和 Docker Compose
 install_docker() {
+    # 检查网络连接
+    check_network_connection || return 1
+
     echo "正在安装 Docker..."
+    
+    # 使用 curl 安装 Docker，但在无法访问时尝试提供详细的错误信息
+    if ! curl -fsSL https://get.docker.com | bash -s docker; then
+        echo "[ERROR] Docker 安装脚本执行失败，请检查网络连接或手动安装 Docker。"
+        log_message "[ERROR] Docker 安装脚本执行失败"
+        return 1
+    fi
 
-    # 安装 Docker
-    execute_sudo "curl -fsSL https://get.docker.com | bash -s docker"
-    execute_sudo "systemctl start docker"
-    execute_sudo "systemctl enable docker"
+    # 启动 Docker 服务
+    echo "启动 Docker 服务..."
+    if ! sudo systemctl start docker; then
+        echo "[ERROR] Docker 服务启动失败。"
+        log_message "[ERROR] Docker 服务启动失败"
+        return 1
+    fi
 
+    # 启用 Docker 服务开机自启
+    if ! sudo systemctl enable docker; then
+        echo "[ERROR] 启用 Docker 服务失败。"
+        log_message "[ERROR] 启用 Docker 服务失败"
+        return 1
+    fi
+
+    # 安装 Docker Compose
     echo "正在安装 Docker Compose..."
-
-    # 使用 yq 代替 jq 获取 Docker Compose 最新版本
     local compose_version
     compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | yq -r '.tag_name')
 
     if [ -z "$compose_version" ]; then
         echo "[ERROR] 无法获取 Docker Compose 版本信息！"
+        log_message "[ERROR] 无法获取 Docker Compose 版本信息！"
         return 1
     fi
 
@@ -224,6 +244,26 @@ install_docker() {
     execute_sudo "chmod +x /usr/local/bin/docker-compose"
 
     echo "Docker 和 Docker Compose 安装完成。"
+}
+
+# 创建 mintcat 虚拟网络
+create_mintcat_network() {
+    # 删除现有的 mintcat 虚拟网络
+    echo "删除现有 mintcat 虚拟网络配置..."
+    if ! sudo docker network rm mintcat 2>/dev/null; then
+        echo "[ERROR] 删除现有的 mintcat 虚拟网络失败。"
+        log_message "[ERROR] 删除现有的 mintcat 虚拟网络失败。"
+        return 1
+    fi
+
+    # 创建新的 mintcat 虚拟网络
+    echo "创建新的 mintcat 虚拟网络..."
+    if ! sudo docker network create --driver bridge --scope local --attachable --subnet 172.20.0.0/16 --gateway 172.20.0.1 --ip-range 172.20.0.0/25 mintcat; then
+        echo "[ERROR] 创建 mintcat 虚拟网络失败。"
+        log_message "[ERROR] 创建 mintcat 虚拟网络失败。"
+        return 1
+    fi
+    echo "mintcat 虚拟网络已成功创建。"
 }
 
 # 暂停等待用户按键
