@@ -59,8 +59,8 @@ if [ $? -ne 0 ]; then
     echo "虚拟网络 mintcat 不存在，正在创建..."
     docker network create \
         --driver bridge \
-        --subnet 172.30.0.0/16 \  # 修改为不同的子网，避免与其他网络冲突
-        --gateway 172.30.0.1 \     # 设置网关
+        --subnet 172.30.0.0/16 \
+        --gateway 172.30.0.1 \
         mintcat
     echo "虚拟网络 mintcat 创建成功。"
 else
