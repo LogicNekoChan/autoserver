@@ -46,11 +46,11 @@ esac
 echo "确保虚拟网络和卷已经创建..."
 
 # 检查并删除冲突的网络（例如 root_mintcat）
-existing_networks=$(docker network ls --filter "name=root_mintcat" -q)
+existing_networks=$(docker network ls --filter "name=^mintcat$" -q)
 if [ -n "$existing_networks" ]; then
-    echo "检测到冲突网络 root_mintcat，正在删除..."
-    docker network rm root_mintcat
-    echo "冲突网络 root_mintcat 已删除。"
+    echo "检测到冲突网络 mintcat，正在删除..."
+    docker network rm mintcat
+    echo "冲突网络 mintcat 已删除。"
 fi
 
 # 创建 mintcat 网络（如果不存在）
