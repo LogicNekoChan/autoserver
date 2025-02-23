@@ -160,29 +160,35 @@ backup_container() {
     selected_container=${containers[$((idx-1))]}
     echo "开始备份容器 $selected_container 的映射卷..."
 
-    # 获取容器的所有卷信息
-    volumes=$(docker inspect -f '{{json .Mounts}}' "$selected_container" | jq -r '.[] | select(.Type=="volume") | .Source')
+    # 获取容器的所有挂载卷信息
+    mounts=$(docker inspect -f '{{json .Mounts}}' "$selected_container" | jq -r '.[] | select(.Type=="volume" or .Type=="bind") | .Source')
 
-    if [ -z "$volumes" ]; then
-        echo "[ERROR] 容器没有映射的卷！"
+    if [ -z "$mounts" ]; then
+        echo "[ERROR] 容器没有映射的卷或目录！"
         return
     fi
 
-    # 备份每个映射卷
-    for volume in $volumes; do
-        echo "备份卷：$volume"
+    # 设置备份文件保存路径
+    backup_path="$BACKUP_DIR/$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$backup_path"
+
+    # 备份每个映射卷或目录
+    for mount in $mounts; do
+        # 获取卷或目录的名称
+        mount_name=$(basename "$mount")
+        echo "备份卷或目录：$mount"
         
         # 生成备份文件名
-        backup_file="$BACKUP_DIR/$(basename $volume)_$(date +%F_%H%M%S).tar.gz"
+        backup_file="$backup_path/${mount_name}_backup_$(date +%F_%H%M%S).tar.gz"
         
         # 进行备份操作
-        if ! tar -czvf "$backup_file" -C "$volume" . 2>/dev/null; then
-            echo "[ERROR] 备份失败！"
+        if ! tar -czf "$backup_file" -C "$mount" . 2>/dev/null; then
+            echo "[ERROR] 备份失败：$mount"
             return
         fi
 
         echo "备份完成，文件保存在：$backup_file"
-        log_message "容器 $selected_container 的卷 $volume 备份完成，备份文件：$backup_file"
+        log_message "容器 $selected_container 的挂载点 $mount 备份完成，备份文件：$backup_file"
     done
 }
 
