@@ -14,12 +14,13 @@ log_message() {
 # 检查并执行 sudo 权限操作
 execute_sudo() {
     local command="$1"
-    if sudo $command; then
-        log_message "成功执行命令: $command"
-    else
-        echo "命令执行失败: $command"
-        log_message "命令执行失败: $command"
+    echo "执行命令: $command"
+    if ! sudo $command; then
+        echo "[ERROR] 命令执行失败: $command"
+        log_message "[ERROR] 命令执行失败: $command"
         return 1
+    else
+        log_message "成功执行命令: $command"
     fi
 }
 
@@ -41,7 +42,7 @@ system_maintenance_menu() {
             2) change_to_fastest_mirror ;;  # 更换最快的软件源
             3) return ;;        # 返回主菜单
             *)
-                echo "无效选项，请重试。"
+                echo "[ERROR] 无效选项，请重试。"
                 log_message "用户输入无效选项: $deploy_choice"
                 sleep 2
                 ;;
@@ -58,8 +59,8 @@ quick_setup() {
         . /etc/os-release
         os_type=$ID
     else
-        echo "无法检测系统信息，脚本支持 Ubuntu 和 Debian 系统。"
-        log_message "无法检测系统信息，脚本支持 Ubuntu 和 Debian 系统。"
+        echo "[ERROR] 无法检测系统信息，脚本支持 Ubuntu 和 Debian 系统。"
+        log_message "[ERROR] 无法检测系统信息，脚本支持 Ubuntu 和 Debian 系统。"
         return
     fi
 
@@ -72,8 +73,8 @@ quick_setup() {
             execute_sudo "apt update -y && apt install -y neofetch vim jq curl && apt upgrade -y"
             ;;
         *)
-            echo "当前系统不支持自动化部署，请手动安装依赖。"
-            log_message "当前系统不支持自动化部署：$NAME"
+            echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
+            log_message "[ERROR] 当前系统不支持自动化部署：$NAME"
             return
             ;;
     esac
@@ -140,7 +141,7 @@ enable_bbr() {
     if lsmod | grep -q bbr; then
         echo "BBR 模式已成功启用。"
     else
-        echo "BBR 模式启用失败，请手动检查配置。"
+        echo "[ERROR] BBR 模式启用失败，请手动检查配置。"
     fi
 }
 
@@ -206,3 +207,4 @@ pause() {
 
 # 脚本入口：调用系统维护菜单
 system_maintenance_menu
+
