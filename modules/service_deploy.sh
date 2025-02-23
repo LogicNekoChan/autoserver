@@ -2,7 +2,7 @@
 # 服务选择部署模块
 
 # 服务列表及其对应的容器名称
-services=("watchtower" "xui" "nginx" "vaultwarden" "portainer")
+services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce")
 
 echo "检测到以下服务："
 for i in "${!services[@]}"; do
@@ -36,8 +36,8 @@ case "$selected_service" in
         echo "部署 Vaultwarden - 密码管理"
         docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d vaultwarden
         ;;
-    "portainer")
-        echo "部署 Portainer - Docker 管理面板"
+    "portainer_agent")
+        echo "部署 Portainer Agent - 用于管理 Docker 主机"
         docker run -d \
           -p 9001:9001 \
           --name portainer_agent \
@@ -46,6 +46,17 @@ case "$selected_service" in
           -v /var/lib/docker/volumes:/var/lib/docker/volumes \
           -v /:/host \
           portainer/agent:2.21.5
+        ;;
+    "portainer_ce")
+        echo "部署 Portainer CE - Docker 管理面板"
+        docker run -d \
+          -p 8000:8000 \
+          -p 9443:9443 \
+          --name portainer \
+          --restart=always \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v portainer_data:/data \
+          portainer/portainer-ce:lts
         ;;
     *)
         echo "[ERROR] 无效服务选择！"
@@ -93,9 +104,7 @@ for volume in "${volumes[@]}"; do
     fi
 done
 
-echo "服务部署完成！"
-
-# 更新的 docker-compose.yml 配置，不再输出到屏幕
+# 更新的 docker-compose.yml 配置（不输出到屏幕）
 cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
 version: "3.8"
 
@@ -150,13 +159,27 @@ services:
     networks:
       - mintcat
 
-  # Portainer - Docker 管理面板
-  portainer:
-    image: portainer/portainer-ce
-    container_name: portainer
+  # Portainer Agent - 用于管理 Docker 主机
+  portainer_agent:
+    image: portainer/agent:2.21.5
+    container_name: portainer_agent
+    restart: unless-stopped
+    networks:
+      - mintcat
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+
+  # Portainer CE - Docker 管理面板
+  portainer_ce:
+    image: portainer/portainer-ce:lts
+    container_name: portainer_ce
     restart: unless-stopped
     ports:
-      - "9000:9000"
+      - "8000:8000"
       - "9443:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
