@@ -131,7 +131,6 @@ case "$option" in
     *) echo "[ERROR] 无效选择！" ;;
 esac
 
-# 备份容器
 backup_container() {
     echo "请选择需要备份的容器："
     
@@ -169,7 +168,7 @@ backup_container() {
     fi
 
     # 设置备份文件保存路径
-    backup_path="$BACKUP_DIR/$(date +%Y%m%d%H%M%S)"
+    backup_path="$BACKUP_DIR"
     mkdir -p "$backup_path"
 
     # 备份每个映射卷或目录
@@ -178,8 +177,8 @@ backup_container() {
         mount_name=$(basename "$mount")
         echo "备份卷或目录：$mount"
         
-        # 生成备份文件名
-        backup_file="$backup_path/${mount_name}_backup_$(date +%F_%H%M%S).tar.gz"
+        # 生成备份文件名，包含容器名称和时间戳
+        backup_file="$backup_path/${selected_container}_$(date +%Y%m%d%H%M%S)_${mount_name}.tar.gz"
         
         # 进行备份操作
         if ! tar -czf "$backup_file" -C "$mount" . 2>/dev/null; then
