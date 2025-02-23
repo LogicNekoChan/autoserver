@@ -46,11 +46,11 @@ esac
 echo "确保虚拟网络和卷已经创建..."
 
 # 检查并删除冲突的网络（例如 root_mintcat）
-existing_networks=$(docker network ls --filter "name=^mintcat$" -q)
+existing_networks=$(docker network ls --filter "name=root_mintcat" -q)
 if [ -n "$existing_networks" ]; then
-    echo "检测到冲突网络 mintcat，正在删除..."
-    docker network rm mintcat
-    echo "冲突网络 mintcat 已删除。"
+    echo "检测到冲突网络 root_mintcat，正在删除..."
+    docker network rm root_mintcat
+    echo "冲突网络 root_mintcat 已删除。"
 fi
 
 # 创建 mintcat 网络（如果不存在）
@@ -59,8 +59,8 @@ if [ $? -ne 0 ]; then
     echo "虚拟网络 mintcat 不存在，正在创建..."
     docker network create \
         --driver bridge \
-        --subnet 172.20.0.0/16 \  # 使用不同的子网地址段
-        --gateway 172.20.0.1 \     # 设置网关
+        --subnet 172.30.0.0/16 \  # 修改为不同的子网，避免与其他网络冲突
+        --gateway 172.30.0.1 \     # 设置网关
         mintcat
     echo "虚拟网络 mintcat 创建成功。"
 else
@@ -142,8 +142,8 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: "172.20.0.0/16"  # 修改为不同的子网地址段
-        - gateway: "172.20.0.1"    # 设置网关
+        - subnet: "172.30.0.0/16"  # 修改为不同的子网，避免与其他网络冲突
+        - gateway: "172.30.0.1"    # 设置网关
 
 volumes:
   xui_db:
