@@ -22,19 +22,19 @@ echo "正在部署服务：$selected_service"
 case "$selected_service" in
     "watchtower")
         echo "部署 Watchtower - 自动更新容器"
-        docker-compose -f "$(dirname "$0")/../docker-compose.yml" up -d watchtower
+        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d watchtower
         ;;
     "xui")
         echo "部署 XUI - 管理面板"
-        docker-compose -f "$(dirname "$0")/../docker-compose.yml" up -d xui
+        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d xui
         ;;
     "nginx")
         echo "部署 Nginx Proxy Manager"
-        docker-compose -f "$(dirname "$0")/../docker-compose.yml" up -d nginx
+        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d nginx
         ;;
     "vaultwarden")
         echo "部署 Vaultwarden - 密码管理"
-        docker-compose -f "$(dirname "$0")/../docker-compose.yml" up -d vaultwarden
+        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d vaultwarden
         ;;
     *)
         echo "[ERROR] 无效服务选择！"
@@ -73,3 +73,76 @@ for volume in "${volumes[@]}"; do
 done
 
 echo "服务部署完成！"
+
+# 更新的 docker-compose.yml 配置
+cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
+version: "3.8"
+
+services:
+  # Watchtower - 自动更新容器
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    command: --cleanup
+
+  # XUI - 管理面板
+  xui:
+    image: enwaiax/x-ui:alpha-zh
+    container_name: xui
+    volumes:
+      - xui_db:/etc/x-ui/
+      - xui_cert:/root/cert/
+    restart: unless-stopped
+    networks:
+      mintcat:
+        ipv4_address: 172.21.0.4  # 固定 IP 地址
+
+  # Nginx Proxy Manager
+  nginx:
+    image: jc21/nginx-proxy-manager
+    container_name: nginx
+    restart: unless-stopped
+    networks:
+      mintcat:
+        ipv4_address: 172.21.0.2  # 固定 IP 地址    
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - nginx_data:/data
+      - letsencrypt:/etc/letsencrypt
+
+  # Vaultwarden - 密码管理
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    volumes:
+      - vaultwarden_data:/data
+    environment:
+      - PUID=0
+      - PGID=0
+    networks:
+      mintcat:
+        ipv4_address: 172.21.0.3  # 固定 IP 地址
+
+networks:
+  mintcat:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
+
+volumes:
+  xui_db:
+  xui_cert:
+  nginx_data:
+  letsencrypt:
+  vaultwarden_data:
+EOF
+
+echo "docker-compose.yml 配置文件已生成！"
