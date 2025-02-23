@@ -95,8 +95,8 @@ done
 
 echo "服务部署完成！"
 
-# 更新的 docker-compose.yml 配置
-cat <<EOF
+# 更新的 docker-compose.yml 配置，不再输出到屏幕
+cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
 version: "3.8"
 
 services:
