@@ -2,11 +2,16 @@
 
 # Cron 模块功能函数
 
+# 获取当前的 Cron 任务
+get_cron_jobs() {
+    crontab -l 2>/dev/null
+}
+
 # 查看当前 Cron 任务
 list_cron_jobs() {
     clear
     echo "当前的 Cron 任务列表："
-    cron_jobs=$(crontab -l 2>/dev/null)
+    cron_jobs=$(get_cron_jobs)
     if [ -z "$cron_jobs" ]; then
         echo "当前没有任何 Cron 任务。"
     else
@@ -16,45 +21,36 @@ list_cron_jobs() {
     pause
 }
 
+# 验证分钟、小时、日期、月份、星期的输入是否合法
+validate_input() {
+    local input_value=$1
+    local pattern=$2
+    while ! [[ "$input_value" =~ $pattern ]]; do
+        echo "无效输入，请重新输入："
+        read -p "$3" input_value
+    done
+    echo "$input_value"
+}
+
 # 添加新任务（交互式获取时间表达式）
 add_cron_job() {
     # 获取时间表达式
     echo "请输入 Cron 任务的时间表达式："
-    
+
     # 获取分钟
-    read -p "分钟 (0-59): " minute
-    while ! [[ "$minute" =~ ^[0-5]?[0-9]$ ]]; do
-        echo "无效的分钟值，请输入 0 到 59 之间的数字。"
-        read -p "分钟 (0-59): " minute
-    done
-    
+    minute=$(validate_input "$(read -p "分钟 (0-59): "; echo $REPLY)" "^[0-5]?[0-9]$" "分钟 (0-59): ")
+
     # 获取小时
-    read -p "小时 (0-23): " hour
-    while ! [[ "$hour" =~ ^[0-1]?[0-9]$|^2[0-3]$ ]]; do
-        echo "无效的小时值，请输入 0 到 23 之间的数字。"
-        read -p "小时 (0-23): " hour
-    done
+    hour=$(validate_input "$(read -p "小时 (0-23): "; echo $REPLY)" "^[0-1]?[0-9]$|^2[0-3]$" "小时 (0-23): ")
 
     # 获取日期
-    read -p "日期 (1-31, * 表示任意): " day
-    while ! [[ "$day" =~ ^([1-9]|[12][0-9]|3[01]|\*)$ ]]; do
-        echo "无效的日期值，请输入 1 到 31 之间的数字，或 * 表示任意。"
-        read -p "日期 (1-31, * 表示任意): " day
-    done
+    day=$(validate_input "$(read -p "日期 (1-31, * 表示任意): "; echo $REPLY)" "^([1-9]|[12][0-9]|3[01]|\*)$" "日期 (1-31, * 表示任意): ")
 
     # 获取月份
-    read -p "月份 (1-12, * 表示任意): " month
-    while ! [[ "$month" =~ ^([1-9]|1[0-2]|\*)$ ]]; do
-        echo "无效的月份值，请输入 1 到 12 之间的数字，或 * 表示任意。"
-        read -p "月份 (1-12, * 表示任意): " month
-    done
+    month=$(validate_input "$(read -p "月份 (1-12, * 表示任意): "; echo $REPLY)" "^([1-9]|1[0-2]|\*)$" "月份 (1-12, * 表示任意): ")
 
     # 获取星期
-    read -p "星期 (0-6, * 表示任意，0=星期天): " week
-    while ! [[ "$week" =~ ^[0-6]$|^\*$ ]]; do
-        echo "无效的星期值，请输入 0 到 6 之间的数字，或 * 表示任意。"
-        read -p "星期 (0-6, * 表示任意，0=星期天): " week
-    done
+    week=$(validate_input "$(read -p "星期 (0-6, * 表示任意，0=星期天): "; echo $REPLY)" "^[0-6]$|^\*$" "星期 (0-6, * 表示任意，0=星期天): ")
 
     # 获取要执行的命令
     read -p "请输入要执行的命令: " command
@@ -75,7 +71,7 @@ add_cron_job() {
 delete_cron_job() {
     clear
     echo "当前的 Cron 任务列表："
-    cron_jobs=$(crontab -l 2>/dev/null)
+    cron_jobs=$(get_cron_jobs)
     if [ -z "$cron_jobs" ]; then
         echo "当前没有任何 Cron 任务。"
         pause
