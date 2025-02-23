@@ -95,6 +95,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     command: --cleanup
+    networks:
+      - mintcat
 
   # XUI - 管理面板
   xui:
@@ -105,8 +107,7 @@ services:
       - xui_cert:/root/cert/
     restart: unless-stopped
     networks:
-      mintcat:
-        ipv4_address: 172.21.0.4  # 固定 IP 地址
+      - mintcat
 
   # Nginx Proxy Manager
   nginx:
@@ -114,8 +115,7 @@ services:
     container_name: nginx
     restart: unless-stopped
     networks:
-      mintcat:
-        ipv4_address: 172.21.0.2  # 固定 IP 地址    
+      - mintcat
     ports:
       - "80:80"
       - "81:81"
@@ -135,8 +135,7 @@ services:
       - PUID=0
       - PGID=0
     networks:
-      mintcat:
-        ipv4_address: 172.21.0.3  # 固定 IP 地址
+      - mintcat
 
 networks:
   mintcat:
@@ -144,6 +143,7 @@ networks:
     ipam:
       config:
         - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
+        - gateway: "172.21.0.1"    # 设置网关
 
 volumes:
   xui_db:
