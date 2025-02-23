@@ -59,8 +59,8 @@ if [ $? -ne 0 ]; then
     echo "虚拟网络 mintcat 不存在，正在创建..."
     docker network create \
         --driver bridge \
-        --subnet 172.21.0.0/16 \
-        --gateway 172.21.0.1 \
+        --subnet 172.20.0.0/16 \  # 使用不同的子网地址段
+        --gateway 172.20.0.1 \     # 设置网关
         mintcat
     echo "虚拟网络 mintcat 创建成功。"
 else
@@ -142,8 +142,8 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
-        - gateway: "172.21.0.1"    # 设置网关
+        - subnet: "172.20.0.0/16"  # 修改为不同的子网地址段
+        - gateway: "172.20.0.1"    # 设置网关
 
 volumes:
   xui_db:
