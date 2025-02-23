@@ -172,12 +172,18 @@ setup_ssh_key_auth() {
     local ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzx8GlO5jVkNiwBG57J2zVwllC1WHQbRaFVI8H5u+fZnt3YuuIsCJBCRfM7/7Ups6wdEVwhgk+PEq8nE3WgZ8SBgNoAO+CgZprdDi+nx7zBRqrHw9oJcHQysiAw+arRW29g2TZgVhszjVq5G6MoVYGjnnPzLEcZS37by0l9eZD9u1hAB4FtIdw+VfrfJG177HLfiLkSm6PkO3QMWTYGmGjE3zpMxWeascWCn6UTDpjt6UiSMgcmAlx4FP8mkRRMc5TvxqnUKbgdjYBU2V+dZQx1keovrd0Yh8KitPEGd6euok3e7WmtLQlXH8WOiPlCr2YJfW3vQjlDVg5UU83GSGr root@mintcat"
 
     echo "正在设置 SSH 密钥登录..."
+
+    # 确保 .ssh 目录存在并设置正确的权限
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
+
+    # 将 SSH 密钥写入 authorized_keys
     echo "$ssh_key" > ~/.ssh/authorized_keys
     chmod 600 ~/.ssh/authorized_keys
 
     echo "正在修改 SSH 配置..."
+
+    # 禁用密码登录
     execute_sudo "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
 
     # 检查并开启 root 登录
@@ -188,18 +194,35 @@ setup_ssh_key_auth() {
         echo "已允许 root 登录，无需修改。"
     fi
 
-    # 重启 SSH 服务
+    # 重启 SSH 服务以应用配置
     execute_sudo "systemctl restart sshd"
     echo "SSH 密钥登录已配置，密码登录已禁用，root 登录已启用。"
 }
 
 # 安装 Docker 和 Docker Compose
 install_docker() {
+    echo "正在安装 Docker..."
+
+    # 安装 Docker
     execute_sudo "curl -fsSL https://get.docker.com | bash -s docker"
     execute_sudo "systemctl start docker"
     execute_sudo "systemctl enable docker"
-    execute_sudo "curl -L 'https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)/docker-compose-$(uname -s)-$(uname -m)' -o /usr/local/bin/docker-compose"
+
+    echo "正在安装 Docker Compose..."
+
+    # 使用 yq 代替 jq 获取 Docker Compose 最新版本
+    local compose_version
+    compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | yq -r '.tag_name')
+
+    if [ -z "$compose_version" ]; then
+        echo "[ERROR] 无法获取 Docker Compose 版本信息！"
+        return 1
+    fi
+
+    # 下载并安装 Docker Compose
+    execute_sudo "curl -L 'https://github.com/docker/compose/releases/download/$compose_version/docker-compose-$(uname -s)-$(uname -m)' -o /usr/local/bin/docker-compose"
     execute_sudo "chmod +x /usr/local/bin/docker-compose"
+
     echo "Docker 和 Docker Compose 安装完成。"
 }
 
