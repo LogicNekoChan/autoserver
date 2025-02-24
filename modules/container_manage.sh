@@ -10,8 +10,10 @@ log_message() {
 
 # 恢复容器备份并重建卷和挂载目录
 restore_container_from_backup() {
+    BACKUP_DIR="/root/backup"  # 备份路径
+
     echo "正在列出备份文件..."
-    
+
     # 列出备份文件
     backups=($(ls $BACKUP_DIR/*.tar.gz 2>/dev/null))
     if [ ${#backups[@]} -eq 0 ]; then
@@ -42,7 +44,6 @@ restore_container_from_backup() {
         exit 1
     fi
 
-    # 显示容器供选择
     for i in "${!running_containers[@]}"; do
         container_id="${running_containers[i]}"
         container_name=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's/^\///')
@@ -59,7 +60,7 @@ restore_container_from_backup() {
     container_name=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's/^\///')
     echo "您选择的容器是：$container_name (ID: $container_id)"
 
-    # 停止容器
+    # 停止容器并备份数据
     echo "正在停止容器 $container_name..."
     docker stop "$container_id" || exit 1
 
@@ -85,11 +86,13 @@ restore_container_from_backup() {
     # 恢复容器的卷和数据
     echo "正在恢复容器的数据卷..."
 
-    # 恢复数据卷
+    # 恢复数据卷数据
     for volume in $volumes; do
+        # 获取数据卷的挂载路径
         volume_path="/var/lib/docker/volumes/$volume/_data"
         if [ -d "$volume_path" ]; then
             echo "恢复卷 $volume 数据到目录 $volume_path"
+            # 解压备份文件到卷的挂载路径，并移除不需要的路径层级
             tar --strip-components=6 -xvzf "$selected_backup" -C "$volume_path" || {
                 echo "恢复卷 $volume 数据失败，退出。"
                 exit 1
@@ -99,10 +102,11 @@ restore_container_from_backup() {
         fi
     done
 
-    # 恢复挂载目录数据
+    # 恢复容器的挂载目录数据
     for mount in $mounts; do
         if [ -d "$mount" ]; then
             echo "恢复挂载目录 $mount"
+            # 解压备份文件到挂载目录，并移除不需要的路径层级
             tar --strip-components=6 -xvzf "$selected_backup" -C "$mount" || {
                 echo "恢复挂载目录 $mount 数据失败，退出。"
                 exit 1
@@ -115,7 +119,6 @@ restore_container_from_backup() {
     docker start "$container_id" || exit 1
 
     echo "恢复完成，容器已启动并恢复。"
-    log_message "容器 $container_name 数据恢复完成，容器已启动。"
 }
 
 # 主菜单
