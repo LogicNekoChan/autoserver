@@ -70,7 +70,7 @@ quick_setup() {
     echo "1. 更新系统并安装基本依赖..."
     case $os_type in
         ubuntu | debian)
-            execute_sudo "apt update -y && apt install -y neofetch vim jq curl && apt upgrade -y"
+            execute_sudo "apt-get update -y && apt-get install -y neofetch vim jq curl && apt-get upgrade -y"
             ;;
         *)
             echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
@@ -148,9 +148,12 @@ setup_swap() {
     local total_disk_size=$(df --output=size / | tail -1)
     local swap_size=2048
 
+    # 如果磁盘空间较小，设置较小的 Swap
     if [ "$total_disk_size" -lt 10240 ]; then
         swap_size=500
     fi
+
+    echo "创建 Swap 文件大小：$swap_size MB"
 
     execute_sudo "swapoff -a"
     execute_sudo "dd if=/dev/zero of=/swapfile bs=1M count=$swap_size status=progress"
