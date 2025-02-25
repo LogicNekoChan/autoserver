@@ -18,99 +18,68 @@ fi
 selected_service=${services[$((idx-1))]}
 echo "正在部署服务：$selected_service"
 
-# 根据选择部署指定的服务
-case "$selected_service" in
-    "watchtower")
-        echo "部署 Watchtower - 自动更新容器"
-        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d watchtower
-        ;;
-    "xui")
-        echo "部署 XUI - 管理面板"
-        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d xui
-        ;;
-    "nginx")
-        echo "部署 Nginx Proxy Manager"
-        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d nginx
-        ;;
-    "vaultwarden")
-        echo "部署 Vaultwarden - 密码管理"
-        docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d vaultwarden
-        ;;
-    "portainer_agent")
-        echo "部署 Portainer Agent - 用于管理 Docker 主机"
-        docker run -d \
-          -p 9001:9001 \
-          --name portainer_agent \
-          --restart=always \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          -v /var/lib/docker/volumes:/var/lib/docker/volumes \
-          -v /:/host \
-          portainer/agent:2.21.5
-        ;;
-    "portainer_ce")
-        echo "部署 Portainer CE - Docker 管理面板"
-        docker run -d \
-          -p 8000:8000 \
-          -p 9443:9443 \
-          -p 9000:9000 \
-          --name portainer \
-          --restart=always \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          -v portainer_data:/data \
-          portainer/portainer-ce:lts
-        ;;
-    *)
-        echo "[ERROR] 无效服务选择！"
-        exit 1
-        ;;
-esac
+# 基于服务选择来部署
+deploy_service() {
+    case "$1" in
+        "watchtower"|"xui"|"nginx"|"vaultwarden")
+            docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d "$1" || { echo "[ERROR] 部署 $1 失败！"; exit 1; }
+            ;;
+        "portainer_agent")
+            docker run -d \
+                -p 9001:9001 \
+                --name portainer_agent \
+                --restart=always \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+                -v /:/host \
+                portainer/agent:2.21.5 || { echo "[ERROR] 部署 Portainer Agent 失败！"; exit 1; }
+            ;;
+        "portainer_ce")
+            docker run -d \
+                -p 8000:8000 \
+                -p 9443:9443 \
+                -p 9000:9000 \
+                --name portainer_ce \
+                --restart=always \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v portainer_data:/data \
+                portainer/portainer-ce:lts || { echo "[ERROR] 部署 Portainer CE 失败！"; exit 1; }
+            ;;
+        *)
+            echo "[ERROR] 无效服务选择！"
+            exit 1
+            ;;
+    esac
+}
 
-# 额外步骤：确保虚拟网络和卷已经创建
-echo "确保虚拟网络和卷已经创建..."
-
-# 检查并删除冲突的网络（例如 root_mintcat）
-existing_networks=$(docker network ls --filter "name=root_mintcat" -q)
-if [ -n "$existing_networks" ]; then
-    echo "检测到冲突网络 root_mintcat，正在删除..."
-    # 停止并断开所有与该网络相关的容器
-    containers=$(docker network inspect root_mintcat -f '{{range .Containers}}{{.Name}} {{end}}')
-    for container in $containers; do
-        docker network disconnect root_mintcat $container
-    done
-    # 尝试删除该网络，忽略错误
-    docker network rm root_mintcat >/dev/null 2>&1
-    echo "冲突网络 root_mintcat 已删除。"
-fi
-
-# 创建 mintcat 网络（如果不存在）
-docker network inspect mintcat >/dev/null 2>&1
-if [ $? -ne 0 ]; then
-    echo "虚拟网络 mintcat 不存在，正在创建..."
-    docker network create --driver bridge mintcat
-    echo "虚拟网络 mintcat 创建成功。"
-else
-    echo "虚拟网络 mintcat 已存在。"
-fi
-
-# 创建卷
-declare -a volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data")
-for volume in "${volumes[@]}"; do
-    docker volume inspect "$volume" >/dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "卷 $volume 不存在，正在创建..."
-        docker volume create "$volume"
-        echo "卷 $volume 创建成功。"
+# 确保网络和卷已创建
+create_network_and_volumes() {
+    # 创建 mintcat 网络（如果不存在）
+    if ! docker network inspect mintcat >/dev/null 2>&1; then
+        echo "虚拟网络 mintcat 不存在，正在创建..."
+        docker network create --driver bridge mintcat || { echo "[ERROR] 创建网络 mintcat 失败！"; exit 1; }
     else
-        echo "卷 $volume 已存在。"
+        echo "虚拟网络 mintcat 已存在。"
     fi
-done
 
-# 更新的 docker-compose.yml 配置（不输出到屏幕）
-cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
+    # 创建卷
+    declare -a volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data")
+    for volume in "${volumes[@]}"; do
+        if ! docker volume inspect "$volume" >/dev/null 2>&1; then
+            echo "卷 $volume 不存在，正在创建..."
+            docker volume create "$volume" || { echo "[ERROR] 创建卷 $volume 失败！"; exit 1; }
+        else
+            echo "卷 $volume 已存在。"
+        fi
+    done
+}
+
+# 更新并生成 docker-compose.yml 配置
+generate_docker_compose() {
+    cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
 version: "3.8"
 
 services:
-  # Watchtower - 自动更新容器
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
@@ -121,7 +90,6 @@ services:
     networks:
       - mintcat
 
-  # XUI - 管理面板
   xui:
     image: enwaiax/x-ui:alpha-zh
     container_name: xui
@@ -132,7 +100,6 @@ services:
     networks:
       - mintcat
 
-  # Nginx Proxy Manager
   nginx:
     image: jc21/nginx-proxy-manager
     container_name: nginx
@@ -147,7 +114,6 @@ services:
       - nginx_data:/data
       - letsencrypt:/etc/letsencrypt
 
-  # Vaultwarden - 密码管理
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
@@ -160,7 +126,6 @@ services:
     networks:
       - mintcat
 
-  # Portainer Agent - 用于管理 Docker 主机
   portainer_agent:
     image: portainer/agent:2.21.5
     container_name: portainer_agent
@@ -174,7 +139,6 @@ services:
       - /var/lib/docker/volumes:/var/lib/docker/volumes
       - /:/host
 
-  # Portainer CE - Docker 管理面板
   portainer_ce:
     image: portainer/portainer-ce:lts
     container_name: portainer_ce
@@ -200,5 +164,10 @@ volumes:
   vaultwarden_data:
   portainer_data:
 EOF
+    echo "docker-compose.yml 配置文件已生成！"
+}
 
-echo "docker-compose.yml 配置文件已生成！"
+# 执行部署
+create_network_and_volumes
+generate_docker_compose
+deploy_service "$selected_service"
