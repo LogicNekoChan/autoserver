@@ -70,10 +70,7 @@ quick_setup() {
     echo "1. 更新系统并安装基本依赖..."
     case $os_type in
         ubuntu | debian)
-            # 修复 apt 命令的问题
-            execute_sudo "apt update -y"
-            execute_sudo "apt install -y neofetch vim jq curl"
-            execute_sudo "apt upgrade -y"
+            execute_sudo "apt update -y && apt install -y neofetch vim jq curl && apt upgrade -y"
             ;;
         *)
             echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
@@ -107,11 +104,9 @@ quick_setup() {
 
 # 创建 mintcat 虚拟网络
 create_mintcat_network() {
-    # 删除现有的 mintcat 虚拟网络
     echo "删除现有 mintcat 虚拟网络配置..."
     execute_sudo "docker network rm mintcat 2>/dev/null"
 
-    # 创建新的 mintcat 虚拟网络
     echo "创建新的 mintcat 虚拟网络..."
     execute_sudo "docker network create --driver bridge --scope local --attachable --subnet 172.20.0.0/16 --gateway 172.20.0.1 --ip-range 172.20.0.0/25 mintcat"
     echo "mintcat 虚拟网络已成功创建。"
@@ -184,69 +179,38 @@ setup_ssh_key_auth() {
     echo "正在修改 SSH 配置..."
 
     # 禁用密码登录
-    if ! sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config; then
-        echo "[ERROR] 修改 PasswordAuthentication 配置失败。"
-        log_message "[ERROR] 修改 PasswordAuthentication 配置失败。"
-        return 1
-    fi
+    execute_sudo "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
 
     # 检查并开启 root 登录
     if grep -q '^PermitRootLogin no' /etc/ssh/sshd_config || ! grep -q '^PermitRootLogin' /etc/ssh/sshd_config; then
         echo "当前不允许 root 登录，正在启用..."
-        if ! sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; then
-            echo "[ERROR] 修改 PermitRootLogin 配置失败。"
-            log_message "[ERROR] 修改 PermitRootLogin 配置失败。"
-            return 1
-        fi
+        execute_sudo "sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config"
     else
         echo "已允许 root 登录，无需修改。"
     fi
 
     # 重启 SSH 服务以应用配置
-    if ! sudo systemctl restart sshd; then
-        echo "[ERROR] 重启 SSH 服务失败。"
-        log_message "[ERROR] 重启 SSH 服务失败。"
-        return 1
-    fi
+    execute_sudo "systemctl restart sshd"
 
     echo "SSH 密钥登录已配置，密码登录已禁用，root 登录已启用。"
 }
 
-
-
 # 安装 Docker 和 Docker Compose
 install_docker() {
-    # 检查网络连接
-    check_network_connection || return 1
-
     echo "正在安装 Docker..."
     
-    # 使用 curl 安装 Docker，但在无法访问时尝试提供详细的错误信息
     if ! curl -fsSL https://get.docker.com | bash -s docker; then
         echo "[ERROR] Docker 安装脚本执行失败，请检查网络连接或手动安装 Docker。"
         log_message "[ERROR] Docker 安装脚本执行失败"
         return 1
     fi
 
-    # 启动 Docker 服务
-    echo "启动 Docker 服务..."
-    if ! sudo systemctl start docker; then
-        echo "[ERROR] Docker 服务启动失败。"
-        log_message "[ERROR] Docker 服务启动失败"
-        return 1
-    fi
+    execute_sudo "systemctl start docker"
+    execute_sudo "systemctl enable docker"
 
-    # 启用 Docker 服务开机自启
-    if ! sudo systemctl enable docker; then
-        echo "[ERROR] 启用 Docker 服务失败。"
-        log_message "[ERROR] 启用 Docker 服务失败"
-        return 1
-    fi
-
-    # 安装 Docker Compose
     echo "正在安装 Docker Compose..."
     local compose_version
-    compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | yq -r '.tag_name')
+    compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.tag_name')
 
     if [ -z "$compose_version" ]; then
         echo "[ERROR] 无法获取 Docker Compose 版本信息！"
@@ -254,36 +218,10 @@ install_docker() {
         return 1
     fi
 
-    # 下载并安装 Docker Compose
     execute_sudo "curl -L 'https://github.com/docker/compose/releases/download/$compose_version/docker-compose-$(uname -s)-$(uname -m)' -o /usr/local/bin/docker-compose"
     execute_sudo "chmod +x /usr/local/bin/docker-compose"
 
     echo "Docker 和 Docker Compose 安装完成。"
-}
-
-# 创建 mintcat 虚拟网络
-create_mintcat_network() {
-    # 删除现有的 mintcat 虚拟网络
-    echo "删除现有 mintcat 虚拟网络配置..."
-    if ! sudo docker network rm mintcat 2>/dev/null; then
-        echo "[ERROR] 删除现有的 mintcat 虚拟网络失败。"
-        log_message "[ERROR] 删除现有的 mintcat 虚拟网络失败。"
-        return 1
-    fi
-
-    # 创建新的 mintcat 虚拟网络
-    echo "创建新的 mintcat 虚拟网络..."
-    if ! sudo docker network create --driver bridge --scope local --attachable --subnet 172.20.0.0/16 --gateway 172.20.0.1 --ip-range 172.20.0.0/25 mintcat; then
-        echo "[ERROR] 创建 mintcat 虚拟网络失败。"
-        log_message "[ERROR] 创建 mintcat 虚拟网络失败。"
-        return 1
-    fi
-    echo "mintcat 虚拟网络已成功创建。"
-}
-
-# 暂停等待用户按键
-pause() {
-    read -p "按 Enter 键继续..."
 }
 
 # 脚本入口：调用系统维护菜单
