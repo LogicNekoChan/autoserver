@@ -72,7 +72,7 @@ quick_setup() {
         ubuntu | debian)
             execute_sudo "
             sudo apt update 
-            sudo apt install -y neofetch vim jq curl "
+            sudo apt install neofetch vim jq curl "
             ;;
         *)
             echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
