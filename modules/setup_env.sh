@@ -70,7 +70,7 @@ quick_setup() {
     echo "1. 更新系统并安装基本依赖..."
     case $os_type in
         ubuntu | debian)
-            execute_sudo "apt-get update && apt-get install -y neofetch vim jq curl "
+            execute_sudo "sudo apt update && sudo apt install -y neofetch vim jq curl "
             ;;
         *)
             echo "[ERROR] 当前系统不支持自动化部署，请手动安装依赖。"
