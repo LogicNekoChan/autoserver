@@ -54,7 +54,6 @@ system_maintenance_menu() {
 quick_setup() {
     echo "正在检测系统信息..."
     local os_type=""
-
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         os_type=$ID
@@ -67,6 +66,7 @@ quick_setup() {
     echo "当前系统: $NAME $VERSION"
     echo "开始执行基础环境部署..."
 
+    # 更新系统并安装基本依赖
     echo "1. 更新系统并安装基本依赖..."
     case $os_type in
         ubuntu | debian)
@@ -80,22 +80,28 @@ quick_setup() {
     esac
     echo "系统更新和依赖安装完成。"
 
+    # 设置系统时间为上海时间
     echo "2. 设置系统时间为上海时间..."
     execute_sudo "timedatectl set-timezone Asia/Shanghai"
     echo "当前系统时间: $(date)"
 
+    # 启用 BBR 模式
     echo "3. 启用 BBR 模式..."
     enable_bbr
 
+    # 设置 Swap 空间
     echo "4. 设置 Swap 空间..."
     setup_swap
 
+    # 设置 SSH 密钥登录并禁用密码登录
     echo "5. 设置 SSH 密钥登录并禁用密码登录..."
     setup_ssh_key_auth
 
+    # 安装 Docker 和 Docker Compose
     echo "6. 安装 Docker 和 Docker Compose..."
     install_docker
 
+    # 创建 mintcat 虚拟网络
     echo "7. 创建 mintcat 虚拟网络..."
     create_mintcat_network
 
