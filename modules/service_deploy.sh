@@ -1,60 +1,41 @@
 #!/bin/bash
 # 服务选择部署模块
 
-# 服务列表及其对应的容器名称
+# 定义服务列表（对应容器名称）
 services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce")
 
-echo "检测到以下服务："
-for i in "${!services[@]}"; do
-    echo "$((i+1)). ${services[$i]}"
-done
+# 定义 docker-compose 配置文件路径（相对于当前脚本所在目录）
+COMPOSE_FILE="$(dirname "$0")/../docker-compose.yml"
 
-read -p "请选择需要部署的服务编号: " idx
-if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#services[@]}" ]; then
-    echo "[ERROR] 无效选择！"
-    exit 1
-fi
-
-selected_service=${services[$((idx-1))]}
-echo "正在部署服务：$selected_service"
-
-# 基于服务选择来部署
-deploy_service() {
-    case "$1" in
-        "watchtower"|"xui"|"nginx"|"vaultwarden")
-            docker compose -f "$(dirname "$0")/../docker-compose.yml" up -d "$1" || { echo "[ERROR] 部署 $1 失败！"; exit 1; }
-            ;;
-        "portainer_agent")
-            docker run -d \
-                -p 9001:9001 \
-                --name portainer_agent \
-                --restart=always \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v /var/lib/docker/volumes:/var/lib/docker/volumes \
-                -v /:/host \
-                portainer/agent:2.21.5 || { echo "[ERROR] 部署 Portainer Agent 失败！"; exit 1; }
-            ;;
-        "portainer_ce")
-            docker run -d \
-                -p 8000:8000 \
-                -p 9443:9443 \
-                -p 9000:9000 \
-                --name portainer_ce \
-                --restart=always \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v portainer_data:/data \
-                portainer/portainer-ce:lts || { echo "[ERROR] 部署 Portainer CE 失败！"; exit 1; }
-            ;;
-        *)
-            echo "[ERROR] 无效服务选择！"
-            exit 1
-            ;;
-    esac
+# ----------------------------
+# 打印服务列表
+# ----------------------------
+print_services() {
+    echo "检测到以下服务："
+    for i in "${!services[@]}"; do
+        echo "$((i+1)). ${services[$i]}"
+    done
 }
 
-# 确保网络和卷已创建
+# ----------------------------
+# 选择服务
+# ----------------------------
+select_service() {
+    print_services
+    read -p "请选择需要部署的服务编号: " idx
+    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#services[@]}" ]; then
+        echo "[ERROR] 无效选择！"
+        exit 1
+    fi
+    selected_service="${services[$((idx-1))]}"
+    echo "正在部署服务：$selected_service"
+}
+
+# ----------------------------
+# 创建网络和卷（如果不存在则创建）
+# ----------------------------
 create_network_and_volumes() {
-    # 创建 mintcat 网络（如果不存在）
+    # 检查并创建 mintcat 网络
     if ! docker network inspect mintcat >/dev/null 2>&1; then
         echo "虚拟网络 mintcat 不存在，正在创建..."
         docker network create --driver bridge mintcat || { echo "[ERROR] 创建网络 mintcat 失败！"; exit 1; }
@@ -62,8 +43,8 @@ create_network_and_volumes() {
         echo "虚拟网络 mintcat 已存在。"
     fi
 
-    # 创建卷
-    declare -a volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data")
+    # 定义需要创建的卷列表
+    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data")
     for volume in "${volumes[@]}"; do
         if ! docker volume inspect "$volume" >/dev/null 2>&1; then
             echo "卷 $volume 不存在，正在创建..."
@@ -74,9 +55,11 @@ create_network_and_volumes() {
     done
 }
 
-# 更新并生成 docker-compose.yml 配置
+# ----------------------------
+# 生成 docker-compose.yml 配置文件
+# ----------------------------
 generate_docker_compose() {
-    cat <<EOF > "$(dirname "$0")/../docker-compose.yml"
+    cat <<EOF > "$COMPOSE_FILE"
 version: "3.8"
 
 services:
@@ -164,10 +147,55 @@ volumes:
   vaultwarden_data:
   portainer_data:
 EOF
-    echo "docker-compose.yml 配置文件已生成！"
+    echo "docker-compose.yml 配置文件已生成：$COMPOSE_FILE"
 }
 
-# 执行部署
-create_network_and_volumes
-generate_docker_compose
-deploy_service "$selected_service"
+# ----------------------------
+# 部署服务
+# ----------------------------
+deploy_service() {
+    local service="$1"
+    case "$service" in
+        "watchtower"|"xui"|"nginx"|"vaultwarden")
+            docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
+            ;;
+        "portainer_agent")
+            docker run -d \
+                -p 9001:9001 \
+                --name portainer_agent \
+                --restart=always \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+                -v /:/host \
+                portainer/agent:2.21.5 || { echo "[ERROR] 部署 Portainer Agent 失败！"; exit 1; }
+            ;;
+        "portainer_ce")
+            docker run -d \
+                -p 8000:8000 \
+                -p 9443:9443 \
+                -p 9000:9000 \
+                --name portainer_ce \
+                --restart=always \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v portainer_data:/data \
+                portainer/portainer-ce:lts || { echo "[ERROR] 部署 Portainer CE 失败！"; exit 1; }
+            ;;
+        *)
+            echo "[ERROR] 无效服务选择！"
+            exit 1
+            ;;
+    esac
+}
+
+# ----------------------------
+# 主函数
+# ----------------------------
+main() {
+    select_service
+    create_network_and_volumes
+    generate_docker_compose
+    deploy_service "$selected_service"
+}
+
+# 执行主函数
+main
