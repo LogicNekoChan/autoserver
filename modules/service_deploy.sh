@@ -2,7 +2,7 @@
 # 服务选择部署模块
 
 # 定义服务列表（对应容器名称）
-services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce")
+services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce" "tor")
 
 # 定义 docker-compose 配置文件路径（相对于当前脚本所在目录）
 COMPOSE_FILE="$(dirname "$0")/../docker-compose.yml"
@@ -44,7 +44,7 @@ create_network_and_volumes() {
     fi
 
     # 定义需要创建的卷列表
-    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data")
+    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
     for volume in "${volumes[@]}"; do
         if ! docker volume inspect "$volume" >/dev/null 2>&1; then
             echo "卷 $volume 不存在，正在创建..."
@@ -135,6 +135,17 @@ services:
     networks:
       - mintcat
 
+  tor:
+    image: dockurr/tor
+    container_name: tor
+    restart: always
+    volumes:
+      - tor_config:/etc/tor
+      - tor_data:/var/lib/tor
+    networks:
+      - mintcat
+    stop_grace_period: 1m
+
 networks:
   mintcat:
     driver: bridge
@@ -146,6 +157,8 @@ volumes:
   letsencrypt:
   vaultwarden_data:
   portainer_data:
+  tor_config:
+  tor_data:
 EOF
     echo "docker-compose.yml 配置文件已生成：$COMPOSE_FILE"
 }
@@ -156,7 +169,7 @@ EOF
 deploy_service() {
     local service="$1"
     case "$service" in
-        "watchtower"|"xui"|"nginx"|"vaultwarden")
+        "watchtower"|"xui"|"nginx"|"vaultwarden"|"tor")
             docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
             ;;
         "portainer_agent")
