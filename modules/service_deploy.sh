@@ -1,17 +1,41 @@
 #!/bin/bash
-# 服务选择部署模块：交互式选择序号部署服务，并确保所有容器均加入同一网络 mintcat
+# 交互式选择部署容器脚本
+# 根据编号选择服务，下载远程 docker-compose 配置文件，并部署选定容器，
+# 同时确保容器加入外部网络 mintcat
 
-# 定义服务列表（对应容器名称）
+# 定义服务列表（对应 docker-compose.yml 中的服务名称与 container_name）
 services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce" "tor")
 
-# 定义 docker-compose 配置文件路径（相对于当前脚本所在目录）
-COMPOSE_FILE="$(dirname "$0")/../docker-compose.yml"
+# 远程 docker-compose 配置文件 URL
+COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
+# 本地存储 docker-compose 配置文件路径（脚本所在目录下）
+COMPOSE_FILE="$(dirname "$0")/docker-compose.yml"
+
+# ----------------------------
+# 下载 docker-compose 文件
+# ----------------------------
+fetch_compose_file() {
+    echo "正在从 ${COMPOSE_URL} 下载 docker-compose 配置文件..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL -o "$COMPOSE_FILE" "$COMPOSE_URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$COMPOSE_FILE" "$COMPOSE_URL"
+    else
+        echo "[ERROR] curl 与 wget 均不可用，请安装其中之一。"
+        exit 1
+    fi
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] 下载 docker-compose 配置文件失败。"
+        exit 1
+    fi
+    echo "docker-compose 配置文件已保存到 $COMPOSE_FILE"
+}
 
 # ----------------------------
 # 打印服务列表
 # ----------------------------
 print_services() {
-    echo "检测到以下服务："
+    echo "请选择要部署的服务编号："
     for i in "${!services[@]}"; do
         echo "$((i+1)). ${services[$i]}"
     done
@@ -22,174 +46,68 @@ print_services() {
 # ----------------------------
 select_service() {
     print_services
-    read -p "请选择需要部署的服务编号: " idx
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#services[@]}" ]; then
-        echo "[ERROR] 无效选择！"
+    read -p "请输入服务编号: " num
+    if ! [[ "$num" =~ ^[0-9]+$ ]] || [ "$num" -lt 1 ] || [ "$num" -gt "${#services[@]}" ]; then
+        echo "[ERROR] 无效的编号！"
         exit 1
     fi
-    selected_service="${services[$((idx-1))]}"
-    echo "您选择部署的服务为：$selected_service"
+    selected_service="${services[$((num-1))]}"
+    echo "您选择的服务是：$selected_service"
 }
 
 # ----------------------------
-# 创建网络和卷（如果不存在则创建）
+# 创建外部网络 mintcat 与必要的数据卷（如果不存在）
 # ----------------------------
 create_network_and_volumes() {
     # 检查并创建外部网络 mintcat
     if ! docker network inspect mintcat >/dev/null 2>&1; then
-        echo "虚拟网络 mintcat 不存在，正在创建..."
+        echo "外部网络 mintcat 不存在，正在创建..."
         docker network create --driver bridge mintcat || { echo "[ERROR] 创建网络 mintcat 失败！"; exit 1; }
     else
-        echo "虚拟网络 mintcat 已存在。"
+        echo "外部网络 mintcat 已存在。"
     fi
 
-    # 定义需要创建的卷列表
-    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
+    # 定义需要创建的数据卷列表
+    volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
     for volume in "${volumes[@]}"; do
         if ! docker volume inspect "$volume" >/dev/null 2>&1; then
-            echo "卷 $volume 不存在，正在创建..."
-            docker volume create "$volume" || { echo "[ERROR] 创建卷 $volume 失败！"; exit 1; }
+            echo "数据卷 $volume 不存在，正在创建..."
+            docker volume create "$volume" || { echo "[ERROR] 创建数据卷 $volume 失败！"; exit 1; }
         else
-            echo "卷 $volume 已存在。"
+            echo "数据卷 $volume 已存在。"
         fi
     done
 }
 
 # ----------------------------
-# 生成 docker-compose.yml 配置文件
-# ----------------------------
-generate_docker_compose() {
-    cat <<EOF > "$COMPOSE_FILE"
-version: "3.8"
-
-services:
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
-    command: --cleanup
-    networks:
-      - mintcat
-
-  xui:
-    image: enwaiax/x-ui:alpha-zh
-    container_name: xui
-    volumes:
-      - xui_db:/etc/x-ui/
-      - xui_cert:/root/cert/
-    restart: unless-stopped
-    networks:
-      - mintcat
-
-  nginx:
-    image: jc21/nginx-proxy-manager
-    container_name: nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "81:81"
-      - "443:443"
-    volumes:
-      - nginx_data:/data
-      - letsencrypt:/etc/letsencrypt
-    networks:
-      - mintcat
-
-  vaultwarden:
-    image: vaultwarden/server:latest
-    container_name: vaultwarden
-    restart: unless-stopped
-    volumes:
-      - vaultwarden_data:/data
-    environment:
-      - PUID=0
-      - PGID=0
-    networks:
-      - mintcat
-
-  portainer_agent:
-    image: portainer/agent:2.21.5
-    container_name: portainer_agent
-    restart: unless-stopped
-    ports:
-      - "9001:9001"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker/volumes:/var/lib/docker/volumes
-      - /:/host
-    networks:
-      - mintcat
-
-  portainer_ce:
-    image: portainer/portainer-ce:lts
-    container_name: portainer_ce
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-      - "9000:9000"
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - mintcat
-
-  tor:
-    image: dockurr/tor
-    container_name: tor
-    restart: always
-    volumes:
-      - tor_config:/etc/tor
-      - tor_data:/var/lib/tor
-    networks:
-      - mintcat
-    stop_grace_period: 1m
-
-networks:
-  mintcat:
-    external: true
-
-volumes:
-  xui_db:
-  xui_cert:
-  nginx_data:
-  letsencrypt:
-  vaultwarden_data:
-  portainer_data:
-  tor_config:
-  tor_data:
-EOF
-    echo "docker-compose.yml 文件已生成：$COMPOSE_FILE"
-}
-
-# ----------------------------
-# 部署选定的服务（确保加入 mintcat 网络）
+# 部署选定的服务，并确保容器加入 mintcat 网络
 # ----------------------------
 deploy_service() {
     local service="$1"
-    case "$service" in
-        "watchtower"|"xui"|"nginx"|"vaultwarden"|"portainer_agent"|"portainer_ce"|"tor")
-            docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
-            echo "服务 $service 已成功部署，并加入 mintcat 网络。"
-            ;;
-        *)
-            echo "[ERROR] 无效的服务选择！"
-            exit 1
-            ;;
-    esac
+    # 使用 docker-compose 部署指定服务
+    docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
+    
+    # 假设 docker-compose 文件中 container_name 与服务名称一致
+    container_name="$service"
+    
+    # 检查容器是否已经加入 mintcat 网络
+    if ! docker network inspect mintcat --format '{{json .Containers}}' | grep -q "\"Name\":\"/$container_name\""; then
+        echo "正在将容器 $container_name 连接到 mintcat 网络..."
+        docker network connect mintcat "$container_name" || { echo "[ERROR] 连接容器 $container_name 到 mintcat 网络失败！"; exit 1; }
+    fi
+    echo "服务 $service 已成功部署，并已连接到 mintcat 网络。"
 }
 
 # ----------------------------
 # 主函数
 # ----------------------------
 main() {
+    fetch_compose_file
     select_service
     create_network_and_volumes
-    generate_docker_compose
     deploy_service "$selected_service"
 }
 
 # 执行主函数
 main
+
