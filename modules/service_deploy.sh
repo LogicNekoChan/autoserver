@@ -148,7 +148,7 @@ services:
 
 networks:
   mintcat:
-    driver: bridge
+    external: true
 
 volumes:
   xui_db:
