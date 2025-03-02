@@ -169,29 +169,8 @@ EOF
 deploy_service() {
     local service="$1"
     case "$service" in
-        "watchtower"|"xui"|"nginx"|"vaultwarden"|"tor")
+        "watchtower"|"xui"|"nginx"|"vaultwarden"|"portainer_agent"|"portainer_ce"|"tor")
             docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
-            ;;
-        "portainer_agent")
-            docker run -d \
-                -p 9001:9001 \
-                --name portainer_agent \
-                --restart=always \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v /var/lib/docker/volumes:/var/lib/docker/volumes \
-                -v /:/host \
-                portainer/agent:2.21.5 || { echo "[ERROR] 部署 Portainer Agent 失败！"; exit 1; }
-            ;;
-        "portainer_ce")
-            docker run -d \
-                -p 8000:8000 \
-                -p 9443:9443 \
-                -p 9000:9000 \
-                --name portainer_ce \
-                --restart=always \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v portainer_data:/data \
-                portainer/portainer-ce:lts || { echo "[ERROR] 部署 Portainer CE 失败！"; exit 1; }
             ;;
         *)
             echo "[ERROR] 无效服务选择！"
