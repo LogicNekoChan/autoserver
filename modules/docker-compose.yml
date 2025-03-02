@@ -1,1 +1,101 @@
+version: "3.8"
+
+services:
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    command: --cleanup
+    networks:
+      - mintcat
+
+  xui:
+    image: enwaiax/x-ui:alpha-zh
+    container_name: xui
+    volumes:
+      - xui_db:/etc/x-ui/
+      - xui_cert:/root/cert/
+    restart: unless-stopped
+    networks:
+      - mintcat
+
+  nginx:
+    image: jc21/nginx-proxy-manager
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - nginx_data:/data
+      - letsencrypt:/etc/letsencrypt
+    networks:
+      - mintcat
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    volumes:
+      - vaultwarden_data:/data
+    environment:
+      - PUID=0
+      - PGID=0
+    networks:
+      - mintcat
+
+  portainer_agent:
+    image: portainer/agent:2.21.5
+    container_name: portainer_agent
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+    networks:
+      - mintcat
+
+  portainer_ce:
+    image: portainer/portainer-ce:lts
+    container_name: portainer_ce
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - mintcat
+
+  tor:
+    image: dockurr/tor
+    container_name: tor
+    restart: always
+    volumes:
+      - tor_config:/etc/tor
+      - tor_data:/var/lib/tor
+    networks:
+      - mintcat
+    stop_grace_period: 1m
+
+networks:
+  mintcat:
+    external: true
+
+volumes:
+  xui_db:
+  xui_cert:
+  nginx_data:
+  letsencrypt:
+  vaultwarden_data:
+  portainer_data:
+  tor_config:
+  tor_data:
 
