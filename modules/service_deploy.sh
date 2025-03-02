@@ -1,35 +1,11 @@
 #!/bin/bash
-# 服务选择部署模块
+# 全栈服务部署模块，确保所有服务在同一网络 mintcat 下
 
-# 定义服务列表（对应容器名称）
+# 定义服务列表（仅供参考，实际全部服务会同时部署）
 services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce" "tor")
 
 # 定义 docker-compose 配置文件路径（相对于当前脚本所在目录）
 COMPOSE_FILE="$(dirname "$0")/../docker-compose.yml"
-
-# ----------------------------
-# 打印服务列表
-# ----------------------------
-print_services() {
-    echo "检测到以下服务："
-    for i in "${!services[@]}"; do
-        echo "$((i+1)). ${services[$i]}"
-    done
-}
-
-# ----------------------------
-# 选择服务
-# ----------------------------
-select_service() {
-    print_services
-    read -p "请选择需要部署的服务编号: " idx
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#services[@]}" ]; then
-        echo "[ERROR] 无效选择！"
-        exit 1
-    fi
-    selected_service="${services[$((idx-1))]}"
-    echo "正在部署服务：$selected_service"
-}
 
 # ----------------------------
 # 创建网络和卷（如果不存在则创建）
@@ -165,29 +141,20 @@ EOF
 }
 
 # ----------------------------
-# 部署服务
+# 部署全部服务（全栈部署确保所有容器均加入 mintcat 网络）
 # ----------------------------
-deploy_service() {
-    local service="$1"
-    case "$service" in
-        "watchtower"|"xui"|"nginx"|"vaultwarden"|"portainer_agent"|"portainer_ce"|"tor")
-            docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
-            ;;
-        *)
-            echo "[ERROR] 无效服务选择！"
-            exit 1
-            ;;
-    esac
+deploy_all_services() {
+    echo "正在部署全部服务..."
+    docker compose -f "$COMPOSE_FILE" up -d || { echo "[ERROR] 部署服务失败！"; exit 1; }
 }
 
 # ----------------------------
 # 主函数
 # ----------------------------
 main() {
-    select_service
     create_network_and_volumes
     generate_docker_compose
-    deploy_service "$selected_service"
+    deploy_all_services
 }
 
 # 执行主函数
