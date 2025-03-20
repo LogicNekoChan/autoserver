@@ -98,6 +98,21 @@ services:
     networks:
       - mintcat
 
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=mysql    # 连接 MySQL 服务
+      - PMA_PORT=3306
+    ports:
+      - "8080:80"         # 映射 phpMyAdmin 访问端口
+    depends_on:
+      - mysql
+    networks:
+      - mintcat
+
 networks:
   mintcat:
     external: true
