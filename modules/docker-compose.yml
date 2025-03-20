@@ -130,7 +130,10 @@ services:
 
 networks:
   mintcat:
-    external: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
 
 volumes:
   xui_db:
