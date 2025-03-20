@@ -85,6 +85,18 @@ services:
       - mintcat
     stop_grace_period: 1m
 
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=admin123  # 设置 root 用户的密码
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql      # 数据持久化
+    networks:
+      - mintcat
 
 networks:
   mintcat:
@@ -99,3 +111,4 @@ volumes:
   portainer_data:
   tor_config:
   tor_data:
+  mysql_data:
