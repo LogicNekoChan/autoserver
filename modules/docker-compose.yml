@@ -9,8 +9,8 @@ services:
     restart: unless-stopped
     command: --cleanup
     networks:
-      - mintcat
-    hostname: 172.21.10.9
+      mintcat:
+        ipv4_address: 172.21.10.9
 
   xui:
     image: enwaiax/x-ui:alpha-zh
@@ -20,8 +20,8 @@ services:
       - xui_cert:/root/cert/
     restart: unless-stopped
     networks:
-      - mintcat
-    hostname: 172.21.10.8
+      mintcat:
+        ipv4_address: 172.21.10.8
 
   nginx:
     image: jc21/nginx-proxy-manager
@@ -35,8 +35,8 @@ services:
       - nginx_data:/data
       - letsencrypt:/etc/letsencrypt
     networks:
-      - mintcat
-    hostname: 172.21.10.7
+      mintcat:
+        ipv4_address: 172.21.10.7
 
   mysql:
     image: mysql:latest
@@ -52,8 +52,8 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - mintcat
-    hostname: 172.21.10.6
+      mintcat:
+        ipv4_address: 172.21.10.6
 
   vaultwarden:
     image: vaultwarden/server:latest
@@ -68,8 +68,8 @@ services:
     depends_on:
       - mysql
     networks:
-      - mintcat
-    hostname: 172.21.10.5
+      mintcat:
+        ipv4_address: 172.21.10.5
 
   portainer_agent:
     image: portainer/agent:2.21.5
@@ -82,8 +82,8 @@ services:
       - /var/lib/docker/volumes:/var/lib/docker/volumes
       - /:/host
     networks:
-      - mintcat
-    hostname: 172.21.10.4
+      mintcat:
+        ipv4_address: 172.21.10.4
 
   portainer_ce:
     image: portainer/portainer-ce:lts
@@ -97,8 +97,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
-      - mintcat
-    hostname: 172.21.10.3
+      mintcat:
+        ipv4_address: 172.21.10.3
 
   tor:
     image: dockurr/tor
@@ -108,9 +108,9 @@ services:
       - tor_config:/etc/tor
       - tor_data:/var/lib/tor
     networks:
-      - mintcat
+      mintcat:
+        ipv4_address: 172.21.10.2
     stop_grace_period: 1m
-    hostname: 172.21.10.2
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -125,8 +125,8 @@ services:
     depends_on:
       - mysql
     networks:
-      - mintcat
-    hostname: 172.21.10.1
+      mintcat:
+        ipv4_address: 172.21.10.1
 
 networks:
   mintcat:
@@ -134,6 +134,7 @@ networks:
     ipam:
       config:
         - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
+          gateway: 172.21.0.1
 
 volumes:
   xui_db:
