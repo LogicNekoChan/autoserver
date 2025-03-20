@@ -10,7 +10,7 @@ services:
     command: --cleanup
     networks:
       - mintcat
-    hostname: watchtower.local
+    hostname: 172.21.10.9
 
   xui:
     image: enwaiax/x-ui:alpha-zh
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     networks:
       - mintcat
-    hostname: xui.local
+    hostname: 172.21.10.8
 
   nginx:
     image: jc21/nginx-proxy-manager
@@ -36,7 +36,7 @@ services:
       - letsencrypt:/etc/letsencrypt
     networks:
       - mintcat
-    hostname: nginx.local
+    hostname: 172.21.10.7
 
   mysql:
     image: mysql:latest
@@ -53,7 +53,7 @@ services:
       - mysql_data:/var/lib/mysql
     networks:
       - mintcat
-    hostname: mysql.local
+    hostname: 172.21.10.6
 
   vaultwarden:
     image: vaultwarden/server:latest
@@ -69,7 +69,7 @@ services:
       - mysql
     networks:
       - mintcat
-    hostname: vaultwarden.local
+    hostname: 172.21.10.5
 
   portainer_agent:
     image: portainer/agent:2.21.5
@@ -83,7 +83,7 @@ services:
       - /:/host
     networks:
       - mintcat
-    hostname: portainer-agent.local
+    hostname: 172.21.10.4
 
   portainer_ce:
     image: portainer/portainer-ce:lts
@@ -98,7 +98,7 @@ services:
       - portainer_data:/data
     networks:
       - mintcat
-    hostname: portainer-ce.local
+    hostname: 172.21.10.3
 
   tor:
     image: dockurr/tor
@@ -110,7 +110,7 @@ services:
     networks:
       - mintcat
     stop_grace_period: 1m
-    hostname: tor.local
+    hostname: 172.21.10.2
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -126,7 +126,7 @@ services:
       - mysql
     networks:
       - mintcat
-    hostname: phpmyadmin.local
+    hostname: 172.21.10.1
 
 networks:
   mintcat:
