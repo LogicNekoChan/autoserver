@@ -35,6 +35,22 @@ services:
     networks:
       - mintcat
 
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=admin123  # 设置 root 用户的密码
+      - MYSQL_DATABASE=vaultwarden     # Vaultwarden 使用的数据库
+      - MYSQL_USER=vaultwarden_user    # Vaultwarden 数据库用户
+      - MYSQL_PASSWORD=vw_password     # Vaultwarden 数据库用户密码
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - mintcat
+
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
@@ -42,8 +58,11 @@ services:
     volumes:
       - vaultwarden_data:/data
     environment:
+      - DATABASE_URL=mysql://vaultwarden_user:vw_password@mysql/vaultwarden
       - PUID=0
       - PGID=0
+    depends_on:
+      - mysql
     networks:
       - mintcat
 
@@ -85,29 +104,16 @@ services:
       - mintcat
     stop_grace_period: 1m
 
-  mysql:
-    image: mysql:latest
-    container_name: mysql
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=admin123  # 设置 root 用户的密码
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql      # 数据持久化
-    networks:
-      - mintcat
-
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: phpmyadmin
     restart: unless-stopped
     environment:
       - PMA_ARBITRARY=1
-      - PMA_HOST=mysql    # 连接 MySQL 服务
+      - PMA_HOST=mysql
       - PMA_PORT=3306
     ports:
-      - "8080:80"         # 映射 phpMyAdmin 访问端口
+      - "8082:80"
     depends_on:
       - mysql
     networks:
