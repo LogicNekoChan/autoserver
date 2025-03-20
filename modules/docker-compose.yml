@@ -62,7 +62,7 @@ services:
     volumes:
       - vaultwarden_data:/data
     environment:
-      - DATABASE_URL=mysql://vaultwarden_user:vw_password@mysql.local/vaultwarden
+      - DATABASE_URL=mysql://bitwarden:password@172.21.10.6/bitwarden
       - PUID=0
       - PGID=0
     depends_on:
@@ -118,8 +118,9 @@ services:
     restart: unless-stopped
     environment:
       - PMA_ARBITRARY=1
-      - PMA_HOST=mysql.local   # 使用本地域名连接 MySQL
+      - PMA_HOST=172.21.10.6   # 使用本地域名连接 MySQL
       - PMA_PORT=3306
+      - UPLOAD_LIMIT=10G
     ports:
       - "8082:80"
     depends_on:
