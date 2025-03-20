@@ -10,6 +10,7 @@ services:
     command: --cleanup
     networks:
       - mintcat
+    hostname: watchtower.local
 
   xui:
     image: enwaiax/x-ui:alpha-zh
@@ -20,6 +21,7 @@ services:
     restart: unless-stopped
     networks:
       - mintcat
+    hostname: xui.local
 
   nginx:
     image: jc21/nginx-proxy-manager
@@ -34,22 +36,24 @@ services:
       - letsencrypt:/etc/letsencrypt
     networks:
       - mintcat
+    hostname: nginx.local
 
   mysql:
     image: mysql:latest
     container_name: mysql
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=admin123  # 设置 root 用户的密码
-      - MYSQL_DATABASE=vaultwarden     # Vaultwarden 使用的数据库
-      - MYSQL_USER=vaultwarden_user    # Vaultwarden 数据库用户
-      - MYSQL_PASSWORD=vw_password     # Vaultwarden 数据库用户密码
+      - MYSQL_ROOT_PASSWORD=admin123
+      - MYSQL_DATABASE=vaultwarden
+      - MYSQL_USER=vaultwarden_user
+      - MYSQL_PASSWORD=vw_password
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
       - mintcat
+    hostname: mysql.local
 
   vaultwarden:
     image: vaultwarden/server:latest
@@ -58,13 +62,14 @@ services:
     volumes:
       - vaultwarden_data:/data
     environment:
-      - DATABASE_URL=mysql://vaultwarden_user:vw_password@mysql/vaultwarden
+      - DATABASE_URL=mysql://vaultwarden_user:vw_password@mysql.local/vaultwarden
       - PUID=0
       - PGID=0
     depends_on:
       - mysql
     networks:
       - mintcat
+    hostname: vaultwarden.local
 
   portainer_agent:
     image: portainer/agent:2.21.5
@@ -78,6 +83,7 @@ services:
       - /:/host
     networks:
       - mintcat
+    hostname: portainer-agent.local
 
   portainer_ce:
     image: portainer/portainer-ce:lts
@@ -92,6 +98,7 @@ services:
       - portainer_data:/data
     networks:
       - mintcat
+    hostname: portainer-ce.local
 
   tor:
     image: dockurr/tor
@@ -103,6 +110,7 @@ services:
     networks:
       - mintcat
     stop_grace_period: 1m
+    hostname: tor.local
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -110,7 +118,7 @@ services:
     restart: unless-stopped
     environment:
       - PMA_ARBITRARY=1
-      - PMA_HOST=mysql
+      - PMA_HOST=mysql.local   # 使用本地域名连接 MySQL
       - PMA_PORT=3306
     ports:
       - "8082:80"
@@ -118,6 +126,7 @@ services:
       - mysql
     networks:
       - mintcat
+    hostname: phpmyadmin.local
 
 networks:
   mintcat:
