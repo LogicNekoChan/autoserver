@@ -113,7 +113,7 @@ services:
     stop_grace_period: 1m
 
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    image: phpmyadmin:latest
     container_name: phpmyadmin
     restart: unless-stopped
     environment:
