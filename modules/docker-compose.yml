@@ -44,9 +44,6 @@ services:
     restart: unless-stopped
     environment:
       - MYSQL_ROOT_PASSWORD=admin123
-      - MYSQL_DATABASE=vaultwarden
-      - MYSQL_USER=vaultwarden_user
-      - MYSQL_PASSWORD=vw_password
     ports:
       - "3306:3306"
     volumes:
