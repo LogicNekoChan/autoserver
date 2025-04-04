@@ -52,7 +52,7 @@ change_ssh_port() {
     fi
 
     # 重启 SSH 服务
-    execute_sudo "systemctl restart sshd"
+    execute_sudo "systemctl restart ssh"
 
     echo "SSH 端口已修改为 ${new_port}，请使用 'ssh -p ${new_port} 用户名@服务器IP' 进行连接。"
 }
