@@ -29,17 +29,25 @@ execute_sudo() {
 }
 
 # ----------------------------
-# 修改 SSH 端口（改为 8848）
+# 修改 SSH 端口（改为 8848），并启用密钥登录
 # ----------------------------
 change_ssh_port() {
     local new_port=8848
-    echo "正在修改 SSH 端口为 ${new_port}..."
+    echo "正在修改 SSH 端口为 ${new_port} 并启用密钥登录..."
 
     # 备份原始 SSH 配置
     execute_sudo "cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak"
 
     # 修改 SSH 端口
     execute_sudo "sed -i 's/^#\?Port .*/Port ${new_port}/' /etc/ssh/sshd_config"
+
+    # 启用密钥登录，同时不关闭密码登录
+    execute_sudo "sed -i 's/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config"
+    execute_sudo "sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config"
+
+    # 在配置文件中添加授权的公钥
+    echo "将 SSH 公钥添加到 authorized_keys..."
+    echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzx8GlO5jVkNiwBG57J2zVwllC1WHQbRaFVI8H5u+fZnt3YuuIsCJBCRfM7/7Ups6wdEVwhgk+PEq8nE3WgZ8SBgNoAO+CgZprdDi+nx7zBRqrHw9oJcHQysiAw+arRW29g2TZgVhszjVq5G6MoVYGjnnPzLEcZS37by0l9eZD9u1hAB4FtIdw+VfrfJG177HLfiLkSm6PkO3QMWTYGmGjE3zpMxWeascWCn6UTDpjt6UiSMgcmAlx4FP8mkRRMc5TvxqnUKbgdjYBU2V+dZQx1keovrd0Yh8KitPEGd6euok3e7WmtLQlXH8WOiPlCr2YJfW3vQjlDVg5UU83GSGr root@mintcat" | execute_sudo "tee -a /home/$(whoami)/.ssh/authorized_keys"
 
     # 配置防火墙
     if command -v ufw >/dev/null 2>&1; then
@@ -54,7 +62,7 @@ change_ssh_port() {
     # 重启 SSH 服务
     execute_sudo "systemctl restart ssh"
 
-    echo "SSH 端口已修改为 ${new_port}，请使用 'ssh -p ${new_port} 用户名@服务器IP' 进行连接。"
+    echo "SSH 端口已修改为 ${new_port}，并启用了密钥登录和密码登录并存。请使用 'ssh -p ${new_port} 用户名@服务器IP' 进行连接。"
 }
 
 # ----------------------------
