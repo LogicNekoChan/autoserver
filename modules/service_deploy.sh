@@ -40,7 +40,12 @@ check_dependencies() {
     
     # 验证 Docker Compose 版本
     if ! docker compose version &>/dev/null; then
-        error_exit "需要 Docker Compose V2.4+"
+        error_exit "需要 Docker Compose V2.4+，请参考官方文档升级"
+    fi
+
+    # 验证 jq 版本
+    if ! jq --version &>/dev/null; then
+        error_exit "需要安装 jq 工具：sudo apt install jq 或 sudo yum install jq"
     fi
 }
 
@@ -61,7 +66,7 @@ safe_download() {
 
     # 验证 compose 文件有效性
     if ! docker compose -f "$temp_file" config >/dev/null; then
-        error_exit "下载文件格式异常，不是有效的 docker-compose 文件"
+        error_exit "下载的 compose 文件格式异常或包含错误"
     fi
 
     mv "$temp_file" "$COMPOSE_FILE"
@@ -69,7 +74,7 @@ safe_download() {
 }
 
 # ----------------------------
-# 动态解析服务列表
+# 动态解析服务列表（保持原始顺序）
 # ----------------------------
 parse_services() {
     log "INFO" "开始解析 compose 文件服务列表"
@@ -77,36 +82,43 @@ parse_services() {
     # 生成标准化配置并转换为 JSON
     local compose_json
     if ! compose_json=$(docker compose -f "$COMPOSE_FILE" config --format json); then
-        error_exit "解析 compose 文件失败"
+        error_exit "解析 compose 文件失败，请检查文件格式"
     fi
     
-    # 使用 jq 提取服务列表（按字母顺序排序）
+    # 使用 jq 提取原始顺序服务列表
     local services=()
-    mapfile -t services < <(echo "$compose_json" | jq -r '.services | keys[]' | sort)
+    mapfile -t services < <(echo "$compose_json" | jq -r '.services | keys_unsorted[]')
     
     if [ ${#services[@]} -eq 0 ]; then
         error_exit "compose 文件中未定义任何服务"
     fi
     
-    log "INFO" "发现 ${#services[@]} 个服务: ${services[*]}"
+    log "INFO" "发现 ${#services[@]} 个服务"
     echo "${services[@]}"
 }
 
 # ----------------------------
-# 交互式服务选择
+# 交互式服务选择（优化显示）
 # ----------------------------
 select_service() {
     local -n services_ref=$1
     
-    echo "可用服务列表 (按字母顺序排列):"
+    echo ""
+    echo "============= 可用服务列表 ============="
     for i in "${!services_ref[@]}"; do
-        printf "%2d) %s\n" "$((i+1))" "${services_ref[i]}"
+        printf " %2d) %-25s\n" "$((i+1))" "${services_ref[i]}"
     done
+    echo "========================================"
+    echo ""
 
     while : ; do
         read -rp "请输入服务编号 (1-${#services_ref[@]}): " input
-        [[ "$input" =~ ^[0-9]+$ ]] || continue
+        [[ "$input" =~ ^[0-9]+$ ]] || {
+            echo "错误：请输入数字"
+            continue
+        }
         (( input >= 1 && input <= ${#services_ref[@]} )) && break
+        echo "错误：编号超出范围，有效范围 1-${#services_ref[@]}"
     done
 
     selected="${services_ref[$((input-1))]}"
@@ -120,19 +132,20 @@ select_service() {
 setup_infrastructure() {
     # 创建网络
     if ! docker network inspect mintcat &>/dev/null; then
+        log "INFO" "正在创建 mintcat 网络..."
         docker network create mintcat || error_exit "网络创建失败"
-        log "INFO" "已创建网络: mintcat"
     fi
 
     # 自动创建 compose 文件中定义的所有 volumes
+    log "INFO" "检查存储卷配置..."
     local compose_json
     compose_json=$(docker compose -f "$COMPOSE_FILE" config --format json)
     mapfile -t volumes < <(echo "$compose_json" | jq -r '.volumes | keys[]')
     
     for vol in "${volumes[@]}"; do
         if ! docker volume inspect "$vol" &>/dev/null; then
+            log "INFO" "正在创建存储卷: $vol"
             docker volume create "$vol" || error_exit "存储卷创建失败: $vol"
-            log "INFO" "已创建存储卷: $vol"
         fi
     done
 }
@@ -150,11 +163,13 @@ deploy_service() {
     fi
 
     # 执行部署
+    log "INFO" "启动服务容器..."
     if ! docker compose -f "$COMPOSE_FILE" up -d "$service"; then
         error_exit "服务部署失败: $service"
     fi
 
     # 网络连接检查
+    log "INFO" "验证网络连接..."
     local container_id=$(docker compose -f "$COMPOSE_FILE" ps -q "$service")
     if [ -z "$container_id" ]; then
         error_exit "无法获取容器ID: $service"
@@ -166,6 +181,10 @@ deploy_service() {
     fi
 
     log "INFO" "部署完成: $service"
+    echo ""
+    echo "========================================"
+    echo "  服务 [$service] 已成功部署并联网!"
+    echo "========================================"
 }
 
 # ----------------------------
