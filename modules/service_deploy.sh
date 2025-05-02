@@ -5,7 +5,7 @@ set -eo pipefail
 readonly COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
 readonly COMPOSE_FILE="$(cd "$(dirname "$0")"; pwd)/docker-compose.yml"
 readonly LOG_FILE="$(cd "$(dirname "$0")"; pwd)/deploy.log"
-readonly REQUIRED_CMDS=("docker" "curl" "wget")
+readonly REQUIRED_CMDS=("docker" "curl" "wget" "yq")  # 新增 yq 依赖
 
 # ----------------------------
 # 日志记录函数
@@ -42,6 +42,11 @@ check_dependencies() {
     if ! docker compose version &>/dev/null; then
         error_exit "需要 Docker Compose V2 支持，请参考官方文档安装"
     fi
+
+    # 检查 yq 版本
+    if ! yq --version | grep -q 'version 4'; then
+        error_exit "需要 yq 版本 4.x，请安装最新版：https://github.com/mikefarah/yq"
+    fi
 }
 
 # ----------------------------
@@ -60,8 +65,8 @@ safe_download() {
     fi
 
     # 验证文件有效性
-    if ! grep -q 'version:' "$temp_file"; then
-        error_exit "下载文件格式异常，缺少 compose 版本声明"
+    if ! yq e '.version' "$temp_file" &>/dev/null; then
+        error_exit "下载文件格式异常，不是有效的 docker-compose 文件"
     fi
 
     mv "$temp_file" "$COMPOSE_FILE"
@@ -69,19 +74,14 @@ safe_download() {
 }
 
 # ----------------------------
-# 动态解析服务列表
+# 动态解析服务列表（保持 compose 文件中的原始顺序）
 # ----------------------------
 parse_services() {
     log "INFO" "开始解析 compose 文件服务列表"
     
-    # 获取原始服务列表
-    local raw_services
-    if ! raw_services=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1); then
-        error_exit "解析服务失败: $raw_services"
-    fi
-    
-    # 转换为排序后的数组
-    mapfile -t services < <(echo "$raw_services" | sort -V)
+    # 使用 yq 按顺序提取服务名称
+    local services=()
+    mapfile -t services < <(yq e '.services | keys | .[]' "$COMPOSE_FILE")
     
     if [ ${#services[@]} -eq 0 ]; then
         error_exit "compose 文件中未定义任何服务"
@@ -92,12 +92,12 @@ parse_services() {
 }
 
 # ----------------------------
-# 交互式服务选择
+# 交互式服务选择（固定顺序）
 # ----------------------------
 select_service() {
     local -n services_ref=$1
     
-    echo "可用服务列表:"
+    echo "可用服务列表 (按 compose 文件顺序排列):"
     for i in "${!services_ref[@]}"; do
         printf "%2d) %s\n" "$((i+1))" "${services_ref[i]}"
     done
@@ -123,9 +123,9 @@ setup_infrastructure() {
         log "INFO" "已创建网络: mintcat"
     fi
 
-    # 批量创建存储卷（示例，可根据实际情况调整）
-    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" 
-                   "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
+    # 自动创建 compose 文件中定义的所有 volumes
+    local volumes=()
+    mapfile -t volumes < <(yq e '.volumes | keys | .[]' "$COMPOSE_FILE")
     
     for vol in "${volumes[@]}"; do
         if ! docker volume inspect "$vol" &>/dev/null; then
@@ -143,7 +143,7 @@ deploy_service() {
     log "INFO" "开始部署服务: $service"
 
     # 验证服务存在性
-    if ! docker compose -f "$COMPOSE_FILE" config --services | grep -qx "$service"; then
+    if ! yq e ".services.${service}" "$COMPOSE_FILE" &>/dev/null; then
         error_exit "服务未在 compose 文件中定义: $service"
     fi
 
