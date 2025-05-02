@@ -1,283 +1,300 @@
 #!/bin/bash
-# 容器管理模块（备份、恢复、删除）
+# 容器管理模块（备份、恢复、删除） - 无颜色版
 
-# 设置备份路径及日志文件路径
+# ----------------------------
+# 初始化配置
+# ----------------------------
 BACKUP_DIR="/root/backup"
 LOG_FILE="/root/autoserver.log"
-
-# 检查备份目录是否存在，不存在则创建
-if [ ! -d "$BACKUP_DIR" ]; then
-    mkdir -p "$BACKUP_DIR" || { echo "[ERROR] 无法创建备份目录 $BACKUP_DIR"; exit 1; }
-fi
+DOCKER_DATA_DIR="/var/lib/docker"
+DEPENDENCIES=("docker" "jq" "tar")
 
 # ----------------------------
-# 日志记录函数
+# 预检模块
 # ----------------------------
-log_message() {
-    local message="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
+preflight_check() {
+    # 必须使用 root 用户运行
+    [ "$(id -u)" != "0" ] && handle_error "必须使用 root 用户运行"
+
+    # 检查依赖项
+    local missing=()
+    for cmd in "${DEPENDENCIES[@]}"; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+
+    [ ${#missing[@]} -gt 0 ] && handle_error "缺少依赖: ${missing[*]}"$'\n'"请执行：apt install ${missing[*]}"
 }
 
 # ----------------------------
-# 错误处理函数
+# 日志记录 (带日志轮转)
+# ----------------------------
+log_message() {
+    local message="$1"
+    local log_size=$(wc -c <"$LOG_FILE" 2>/dev/null)
+    [ -z "$log_size" ] && log_size=0
+
+    # 日志轮转 (10MB)
+    [ "$log_size" -gt 10485760 ] && \
+        mv "$LOG_FILE" "${LOG_FILE}.old"
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+}
+
+# ----------------------------
+# 错误处理增强版
 # ----------------------------
 handle_error() {
     local error_msg="$1"
-    echo "[ERROR] $error_msg"
     log_message "[ERROR] $error_msg"
+    echo -e "\n[!] 错误: $error_msg" >&2
     exit 1
 }
 
 # ----------------------------
-# 恢复容器数据
+# 通用选择器 (支持自动序号)
 # ----------------------------
-restore_container_from_backup() {
-    echo "正在列出备份文件..."
-    local backups=()
-    mapfile -t backups < <(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null)
-    if [ ${#backups[@]} -eq 0 ]; then
-        handle_error "没有找到备份文件。"
-    fi
+universal_selector() {
+    local -n items=$1
+    local prompt=$2
+    local max_retry=${3:-3}
+    
+    [ ${#items[@]} -eq 0 ] && handle_error "没有可选项"
 
-    select_backup backups
+    for ((attempt=1; attempt<=max_retry; attempt++)); do
+        # 显示带序号的选项
+        for i in "${!items[@]}"; do
+            printf "%3d) %s\n" $((i+1)) "${items[i]}"
+        done
 
-    # 获取正在运行的容器
-    local running_containers=()
-    mapfile -t running_containers < <(docker ps -q)
-    if [ ${#running_containers[@]} -eq 0 ]; then
-        handle_error "没有正在运行的容器。"
-    fi
-    select_container running_containers
-
-    stop_and_clean_container
-    restore_data
-    start_container
-}
-
-# ----------------------------
-# 选择备份文件
-# 参数：备份文件数组名称（通过 nameref 传递）
-# ----------------------------
-select_backup() {
-    local -n backups_arr=$1
-    echo "可用的备份文件："
-    for i in "${!backups_arr[@]}"; do
-        echo "$((i+1)). ${backups_arr[i]}"
-    done
-
-    read -p "请输入备份文件序号: " backup_index
-    if ! [[ "$backup_index" =~ ^[0-9]+$ ]] || [ "$backup_index" -le 0 ] || \
-       [ "$backup_index" -gt "${#backups_arr[@]}" ]; then
-        handle_error "无效的选择，请重试。"
-    fi
-
-    # 将用户选择的备份文件保存为全局变量
-    selected_backup="${backups_arr[$((backup_index - 1))]}"
-    echo "您选择的备份文件是：$selected_backup"
-}
-
-# ----------------------------
-# 选择容器
-# 参数：运行容器数组名称（通过 nameref 传递）
-# ----------------------------
-select_container() {
-    local -n containers_arr=$1
-    echo "可用的容器列表："
-    local idx=0
-    for container_id in "${containers_arr[@]}"; do
-        local cname
-        cname=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's/^\///')
-        echo "$((idx+1)). $cname (ID: $container_id)"
-        ((idx++))
-    done
-
-    read -p "请输入要恢复的容器序号: " container_index
-    if ! [[ "$container_index" =~ ^[0-9]+$ ]] || [ "$container_index" -le 0 ] || \
-       [ "$container_index" -gt "${#containers_arr[@]}" ]; then
-        handle_error "无效的选择，请重试。"
-    fi
-
-    # 保存容器 ID 和名称为全局变量
-    container_id="${containers_arr[$((container_index - 1))]}"
-    container_name=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's/^\///')
-    echo "您选择的容器是：$container_name (ID: $container_id)"
-}
-
-# ----------------------------
-# 停止并清理容器
-# ----------------------------
-stop_and_clean_container() {
-    echo "正在停止容器 $container_name..."
-    docker stop "$container_id" || docker kill "$container_id" || \
-        handle_error "停止容器失败。"
-
-    # 获取挂载的目录和卷
-    local mounts volumes
-    mounts=$(docker inspect "$container_id" | jq -r '.[].Mounts[] | select(.Type=="bind") | .Source')
-    volumes=$(docker inspect "$container_id" | jq -r '.[].Mounts[] | select(.Type=="volume") | .Name')
-
-    # 卸载挂载的目录
-    for mount in $mounts; do
-        if mountpoint -q "$mount"; then
-            echo "卸载挂载目录：$mount"
-            umount "$mount" || echo "无法卸载目录 $mount"
+        read -rp "${prompt} [1-${#items[@]}]: " selection
+        if [[ "$selection" =~ ^[0-9]+$ ]] && 
+           [ "$selection" -ge 1 ] && 
+           [ "$selection" -le "${#items[@]}" ]; then
+            return $((selection-1))
         fi
+        echo "输入无效，请重试 (剩余尝试次数: $((max_retry-attempt)))"
     done
 
-    # 删除挂载的目录
-    for mount in $mounts; do
-        if [ -d "$mount" ]; then
-            echo "删除目录：$mount"
-            rm -rf "$mount"
-        fi
-    done
-
-    # 删除挂载的卷
-    for volume in $volumes; do
-        echo "删除卷：$volume"
-        docker volume rm "$volume" || echo "删除卷 $volume 失败。"
-    done
-
-    # 保存挂载和卷信息为全局变量，供数据恢复时使用
-    global_mounts="$mounts"
-    global_volumes="$volumes"
+    handle_error "超过最大重试次数"
 }
 
 # ----------------------------
-# 恢复数据
+# 智能容器停止
 # ----------------------------
-restore_data() {
-    echo "开始恢复数据..."
-    local volume_index=1
-    for volume in $global_volumes; do
-        local volume_path="/var/lib/docker/volumes/$volume/_data"
-        echo "恢复卷 $volume ($volume_index)..."
-        if [ -d "$volume_path" ]; then
-            echo "备份当前卷数据：$volume_path"
-            tar -czf "${volume_path}-$(date +%Y%m%d%H%M%S).tar.gz" "$volume_path" 2>/dev/null
-            echo "将备份数据恢复到目录 $volume_path"
-            tar -xvzf "$selected_backup" -C "$volume_path" || \
-                handle_error "恢复卷 $volume 数据失败。"
+graceful_stop() {
+    local container_id=$1
+    log_message "正在停止容器: $container_id"
+    
+    # 先尝试正常停止
+    if ! docker stop "$container_id" >/dev/null 2>&1; then
+        log_message "正常停止失败，尝试强制停止"
+        docker kill "$container_id" >/dev/null 2>&1 || \
+            handle_error "无法停止容器"
+    fi
+}
+
+# ----------------------------
+# 安全清理挂载点
+# ----------------------------
+safe_clean_mounts() {
+    local container_id=$1
+    log_message "清理容器挂载点: $container_id"
+
+    # 获取挂载信息
+    local mounts=($(docker inspect "$container_id" | 
+        jq -r '.[].Mounts[] | select(.Type=="bind") | .Source'))
+
+    # 逆序处理挂载点
+    for ((i=${#mounts[@]}-1; i>=0; i--)); do
+        local mnt="${mounts[i]}"
+        [ -d "$mnt" ] || continue
+        
+        # 卸载挂载点
+        if mountpoint -q "$mnt"; then
+            umount "$mnt" 2>/dev/null || \
+                log_message "警告: 无法卸载 $mnt (可能仍有进程访问)"
+        fi
+
+        # 删除目录
+        rm -rf "$mnt" 2>/dev/null && \
+            log_message "已清理目录: $mnt" || \
+            log_message "警告: 无法删除 $mnt"
+    done
+}
+
+# ----------------------------
+# 智能备份系统
+# ----------------------------
+backup_system() {
+    # 获取运行中的容器列表
+    local containers=($(docker ps --format "{{.Names}}"))
+    [ ${#containers[@]} -eq 0 ] && handle_error "没有运行中的容器"
+
+    # 容器选择
+    echo "选择要备份的容器:"
+    universal_selector containers "请输入容器序号" 3
+    local selected_container="${containers[$?]}"
+
+    # 获取挂载点信息
+    local mount_points=($(docker inspect "$selected_container" | 
+        jq -r '.[].Mounts[] | select(.Type=="bind" or .Type=="volume") | .Source'))
+
+    [ ${#mount_points[@]} -eq 0 ] && handle_error "没有找到挂载点"
+
+    # 创建备份目录
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local backup_path="${BACKUP_DIR}/${selected_container}_${timestamp}"
+    mkdir -p "$backup_path" || handle_error "无法创建备份目录"
+
+    # 执行备份
+    for path in "${mount_points[@]}"; do
+        local safe_path=$(realpath "$path" 2>/dev/null)
+        [[ "$safe_path" != $DOCKER_DATA_DIR/* ]] && \
+            handle_error "检测到非Docker路径: $path"
+
+        local backup_file="${backup_path}/$(basename "$path").tar.gz"
+        log_message "正在备份: $path → $backup_file"
+        
+        if tar -czf "$backup_file" -C "$(dirname "$path")" "$(basename "$path")" 2>/dev/null; then
+            log_message "备份成功 (大小: $(du -h "$backup_file" | cut -f1))"
         else
-            echo "卷 $volume 的路径不存在，跳过恢复该卷。"
+            handle_error "备份失败: $path"
         fi
-        ((volume_index++))
     done
 
-    local mount_index=1
-    for mount in $global_mounts; do
-        if [ -d "$mount" ]; then
-            echo "恢复挂载目录 $mount ($mount_index)..."
-            tar -xvzf "$selected_backup" -C "$mount" || \
-                handle_error "恢复挂载目录 $mount 数据失败。"
-        fi
-        ((mount_index++))
-    done
+    echo -e "\n[√] 备份完成于: $backup_path"
 }
 
 # ----------------------------
-# 启动容器
+# 智能恢复系统
 # ----------------------------
-start_container() {
-    echo "正在启动容器 $container_name..."
-    docker start "$container_id" || handle_error "启动容器失败。"
-    echo "恢复完成，容器已启动。"
-    log_message "容器 $container_name 数据恢复完成，容器已启动。"
-}
+restore_system() {
+    # 获取备份集列表
+    local backup_sets=($(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d))
+    [ ${#backup_sets[@]} -eq 0 ] && handle_error "没有找到备份集"
 
-# ----------------------------
-# 备份容器映射卷
-# ----------------------------
-backup_container() {
-    echo "请选择需要备份的容器："
-    local containers=()
-    mapfile -t containers < <(docker ps --format "{{.Names}}")
-    if [ ${#containers[@]} -eq 0 ]; then
-        handle_error "当前没有任何容器！"
-    fi
+    # 备份集选择
+    echo "选择要恢复的备份集:"
+    universal_selector backup_sets "请输入备份序号" 3
+    local selected_backup="${backup_sets[$?]}"
 
-    for i in "${!containers[@]}"; do
-        echo "$((i+1)). ${containers[i]}"
-    done
+    # 解析备份信息
+    local container_name=$(basename "$selected_backup" | cut -d_ -f1)
+    local backup_files=("$selected_backup"/*.tar.gz)
+    [ ${#backup_files[@]} -eq 0 ] && handle_error "备份集损坏"
 
-    read -p "请输入容器序号: " idx
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || \
-       [ "$idx" -gt "${#containers[@]}" ]; then
-        handle_error "无效选择！"
-    fi
+    # 容器操作选择
+    local options=("创建新容器" "替换现有容器")
+    echo "选择恢复方式:"
+    universal_selector options "请选择恢复方式" 3
+    local restore_type="${options[$?]}"
 
-    local selected_container="${containers[$((idx-1))]}"
-    echo "开始备份容器 $selected_container 的映射卷..."
+    # 执行恢复逻辑
+    case "$restore_type" in
+        "创建新容器")
+            echo "请提供新容器配置..."
+            # TODO: 实现容器创建逻辑
+            ;;
+        "替换现有容器")
+            local containers=($(docker ps -a --filter "name=$container_name" --format "{{.Names}}"))
+            [ ${#containers[@]} -eq 0 ] && handle_error "找不到同名容器"
+            
+            # 容器选择
+            echo "选择要替换的容器:"
+            universal_selector containers "请输入容器序号" 3
+            local target_container="${containers[$?]}"
 
-    local mounts
-    mounts=$(docker inspect -f '{{json .Mounts}}' "$selected_container" | \
-             jq -r '.[] | select(.Type=="volume" or .Type=="bind") | .Source')
-    if [ -z "$mounts" ]; then
-        handle_error "容器没有映射的卷或目录！"
-    fi
+            # 停止并清理旧容器
+            graceful_stop "$target_container"
+            safe_clean_mounts "$target_container"
+            docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
 
-    mkdir -p "$BACKUP_DIR"
-    for mount in $mounts; do
-        local mount_name
-        mount_name=$(basename "$mount")
-        local backup_file="$BACKUP_DIR/${selected_container}_$(date +%Y%m%d%H%M%S)_${mount_name}.tar.gz"
-        echo "正在备份卷或目录：$mount"
-        tar -czf "$backup_file" -C "$mount" . 2>/dev/null || \
-            handle_error "备份失败：$mount"
-        echo "备份完成，文件保存在：$backup_file"
-        log_message "容器 $selected_container 的挂载点 $mount 备份完成，备份文件：$backup_file"
-    done
-}
+            # 数据恢复
+            for backup_file in "${backup_files[@]}"; do
+                local path_name=$(basename "$backup_file" .tar.gz)
+                local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
+                
+                mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
+                log_message "正在恢复: $backup_file → $restore_path"
+                
+                if tar -xzf "$backup_file" -C "$restore_path"; then
+                    log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
+                else
+                    handle_error "恢复失败: $backup_file"
+                fi
+            done
 
-# ----------------------------
-# 删除容器
-# ----------------------------
-delete_container() {
-    echo "请选择需要删除的容器："
-    local containers=()
-    mapfile -t containers < <(docker ps -a --format "{{.Names}}")
-    if [ ${#containers[@]} -eq 0 ]; then
-        handle_error "当前没有任何容器！"
-    fi
-
-    # 对容器名称排序
-    local containers_sorted=($(printf "%s\n" "${containers[@]}" | sort))
-    for i in "${!containers_sorted[@]}"; do
-        echo "$((i+1)). ${containers_sorted[i]}"
-    done
-
-    read -p "请输入容器序号: " idx
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || \
-       [ "$idx" -gt "${#containers_sorted[@]}" ]; then
-        handle_error "无效选择！"
-    fi
-
-    local selected_container="${containers_sorted[$((idx-1))]}"
-    echo "正在删除容器：$selected_container"
-    docker rm -f "$selected_container" 2>/dev/null || \
-        handle_error "删除容器失败！"
-    echo "容器 $selected_container 已成功删除"
-    log_message "容器 $selected_container 已删除"
-}
-
-# ----------------------------
-# 主菜单
-# ----------------------------
-main_menu() {
-    echo "======== 容器管理 ========"
-    echo "1. 备份容器映射卷"
-    echo "2. 恢复备份"
-    echo "3. 删除容器"
-    read -p "请选择操作: " option
-    case "$option" in
-        1) backup_container ;;
-        2) restore_container_from_backup ;;
-        3) delete_container ;;
-        *) echo "[ERROR] 无效选择！" ;;
+            # TODO: 实现容器重新创建
+            echo -e "\n[√] 恢复完成，请手动重新创建容器"
+            ;;
     esac
 }
 
 # ----------------------------
-# 脚本入口
+# 安全删除系统
 # ----------------------------
-main_menu
+delete_system() {
+    # 获取所有容器列表
+    local containers=($(docker ps -a --format "{{.Names}}"))
+    [ ${#containers[@]} -eq 0 ] && handle_error "没有可删除的容器"
+
+    # 容器选择
+    echo "选择要删除的容器:"
+    universal_selector containers "请输入容器序号" 3
+    local selected_container="${containers[$?]}"
+
+    # 确认流程
+    read -rp "确认删除 $selected_container 及其所有数据？[y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || handle_error "操作已取消"
+
+    # 停止并删除
+    graceful_stop "$selected_container"
+    safe_clean_mounts "$selected_container"
+    
+    if docker rm -f "$selected_container" >/dev/null; then
+        log_message "已删除容器: $selected_container"
+        echo -e "\n[√] 删除成功"
+    else
+        handle_error "删除失败"
+    fi
+}
+
+# ----------------------------
+# 主界面
+# ----------------------------
+show_menu() {
+    clear
+    echo -e "\nDocker 容器管理套件"
+    echo "--------------------------------"
+    echo "1) 容器备份"
+    echo "2) 数据恢复"
+    echo "3) 容器删除"
+    echo "4) 退出"
+    echo "--------------------------------"
+    
+    while true; do
+        read -rp "请输入操作编号: " choice
+        case "$choice" in
+            1) backup_system ;;
+            2) restore_system ;;
+            3) delete_system ;;
+            4) exit 0 ;;
+            *) echo "无效选择，请重新输入" ;;
+        esac
+        echo  # 保持空行分隔
+    done
+}
+
+# ----------------------------
+# 主程序入口
+# ----------------------------
+main() {
+    preflight_check
+    [ ! -d "$BACKUP_DIR" ] && mkdir -p "$BACKUP_DIR"
+    log_message "=== 启动管理程序 ==="
+    show_menu
+}
+
+main
