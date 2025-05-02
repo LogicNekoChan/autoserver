@@ -1,113 +1,181 @@
 #!/bin/bash
-# 交互式选择部署容器脚本
-# 根据编号选择服务，下载远程 docker-compose 配置文件，并部署选定容器，
-# 同时确保容器加入外部网络 mintcat
+set -eo pipefail
 
-# 定义服务列表（对应 docker-compose.yml 中的服务名称与 container_name）
-services=("watchtower" "xui" "nginx" "vaultwarden" "portainer_agent" "portainer_ce" "tor")
-
-# 远程 docker-compose 配置文件 URL
-COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
-# 本地存储 docker-compose 配置文件路径（脚本所在目录下）
-COMPOSE_FILE="$(dirname "$0")/docker-compose.yml"
+# 初始化配置
+readonly COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
+readonly COMPOSE_FILE="$(cd "$(dirname "$0")"; pwd)/docker-compose.yml"
+readonly LOG_FILE="$(cd "$(dirname "$0")"; pwd)/deploy.log"
+readonly REQUIRED_CMDS=("docker" "curl" "wget")
 
 # ----------------------------
-# 下载 docker-compose 文件
+# 日志记录函数
 # ----------------------------
-fetch_compose_file() {
-    echo "正在从 ${COMPOSE_URL} 下载 docker-compose 配置文件..."
-    if command -v curl >/dev/null 2>&1; then
-        curl -sSL -o "$COMPOSE_FILE" "$COMPOSE_URL"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$COMPOSE_FILE" "$COMPOSE_URL"
-    else
-        echo "[ERROR] curl 与 wget 均不可用，请安装其中之一。"
-        exit 1
-    fi
-    if [ $? -ne 0 ]; then
-        echo "[ERROR] 下载 docker-compose 配置文件失败。"
-        exit 1
-    fi
-    echo "docker-compose 配置文件已保存到 $COMPOSE_FILE"
+log() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[${timestamp}] [${level}] ${message}" | tee -a "$LOG_FILE"
 }
 
 # ----------------------------
-# 打印服务列表
+# 错误处理增强
 # ----------------------------
-print_services() {
-    echo "请选择要部署的服务编号："
-    for i in "${!services[@]}"; do
-        echo "$((i+1)). ${services[$i]}"
+error_exit() {
+    log "ERROR" "$1"
+    exit 1
+}
+
+# ----------------------------
+# 依赖检查
+# ----------------------------
+check_dependencies() {
+    local missing=()
+    for cmd in "${REQUIRED_CMDS[@]}"; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
     done
+
+    [ ${#missing[@]} -gt 0 ] && error_exit "缺少必要命令: ${missing[*]}"
+    
+    # 检查 Docker Compose V2 可用性
+    if ! docker compose version &>/dev/null; then
+        error_exit "需要 Docker Compose V2 支持，请参考官方文档安装"
+    fi
 }
 
 # ----------------------------
-# 交互式选择服务
+# 安全下载文件
+# ----------------------------
+safe_download() {
+    log "INFO" "开始下载 compose 文件: $COMPOSE_URL"
+    
+    local temp_file="${COMPOSE_FILE}.tmp"
+    trap 'rm -f "$temp_file"' EXIT
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL -o "$temp_file" "$COMPOSE_URL" || error_exit "下载失败 (CURL错误码: $?)"
+    else
+        wget -qO "$temp_file" "$COMPOSE_URL" || error_exit "下载失败 (WGET错误码: $?)"
+    fi
+
+    # 验证文件有效性
+    if ! grep -q 'version:' "$temp_file"; then
+        error_exit "下载文件格式异常，缺少 compose 版本声明"
+    fi
+
+    mv "$temp_file" "$COMPOSE_FILE"
+    log "INFO" "文件已安全保存到: $COMPOSE_FILE"
+}
+
+# ----------------------------
+# 动态解析服务列表
+# ----------------------------
+parse_services() {
+    log "INFO" "开始解析 compose 文件服务列表"
+    
+    # 获取原始服务列表
+    local raw_services
+    if ! raw_services=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1); then
+        error_exit "解析服务失败: $raw_services"
+    fi
+    
+    # 转换为排序后的数组
+    mapfile -t services < <(echo "$raw_services" | sort -V)
+    
+    if [ ${#services[@]} -eq 0 ]; then
+        error_exit "compose 文件中未定义任何服务"
+    fi
+    
+    log "INFO" "发现 ${#services[@]} 个服务: ${services[*]}"
+    echo "${services[@]}"
+}
+
+# ----------------------------
+# 交互式服务选择
 # ----------------------------
 select_service() {
-    print_services
-    read -p "请输入服务编号: " num
-    if ! [[ "$num" =~ ^[0-9]+$ ]] || [ "$num" -lt 1 ] || [ "$num" -gt "${#services[@]}" ]; then
-        echo "[ERROR] 无效的编号！"
-        exit 1
-    fi
-    selected_service="${services[$((num-1))]}"
-    echo "您选择的服务是：$selected_service"
+    local -n services_ref=$1
+    
+    echo "可用服务列表:"
+    for i in "${!services_ref[@]}"; do
+        printf "%2d) %s\n" "$((i+1))" "${services_ref[i]}"
+    done
+
+    while : ; do
+        read -rp "请输入服务编号 (1-${#services_ref[@]}): " input
+        [[ "$input" =~ ^[0-9]+$ ]] || continue
+        (( input >= 1 && input <= ${#services_ref[@]} )) && break
+    done
+
+    selected="${services_ref[$((input-1))]}"
+    log "INFO" "已选择服务: $selected"
+    echo "$selected"
 }
 
 # ----------------------------
-# 创建外部网络 mintcat 与必要的数据卷（如果不存在）
+# 网络与存储管理
 # ----------------------------
-create_network_and_volumes() {
-    # 检查并创建外部网络 mintcat
-    if ! docker network inspect mintcat >/dev/null 2>&1; then
-        echo "外部网络 mintcat 不存在，正在创建..."
-        docker network create --driver bridge mintcat || { echo "[ERROR] 创建网络 mintcat 失败！"; exit 1; }
-    else
-        echo "外部网络 mintcat 已存在。"
+setup_infrastructure() {
+    # 创建网络
+    if ! docker network inspect mintcat &>/dev/null; then
+        docker network create mintcat || error_exit "网络创建失败"
+        log "INFO" "已创建网络: mintcat"
     fi
 
-    # 定义需要创建的数据卷列表
-    volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
-    for volume in "${volumes[@]}"; do
-        if ! docker volume inspect "$volume" >/dev/null 2>&1; then
-            echo "数据卷 $volume 不存在，正在创建..."
-            docker volume create "$volume" || { echo "[ERROR] 创建数据卷 $volume 失败！"; exit 1; }
-        else
-            echo "数据卷 $volume 已存在。"
+    # 批量创建存储卷（示例，可根据实际情况调整）
+    local volumes=("xui_db" "xui_cert" "nginx_data" "letsencrypt" 
+                   "vaultwarden_data" "portainer_data" "tor_config" "tor_data")
+    
+    for vol in "${volumes[@]}"; do
+        if ! docker volume inspect "$vol" &>/dev/null; then
+            docker volume create "$vol" || error_exit "存储卷创建失败: $vol"
+            log "INFO" "已创建存储卷: $vol"
         fi
     done
 }
 
 # ----------------------------
-# 部署选定的服务，并确保容器加入 mintcat 网络
+# 服务部署
 # ----------------------------
 deploy_service() {
     local service="$1"
-    # 使用 docker-compose 部署指定服务
-    docker compose -f "$COMPOSE_FILE" up -d "$service" || { echo "[ERROR] 部署 $service 失败！"; exit 1; }
-    
-    # 假设 docker-compose 文件中 container_name 与服务名称一致
-    container_name="$service"
-    
-    # 检查容器是否已经加入 mintcat 网络
-    if ! docker network inspect mintcat --format '{{json .Containers}}' | grep -q "\"Name\":\"/$container_name\""; then
-        echo "正在将容器 $container_name 连接到 mintcat 网络..."
-        docker network connect mintcat "$container_name" || { echo "[ERROR] 连接容器 $container_name 到 mintcat 网络失败！"; exit 1; }
+    log "INFO" "开始部署服务: $service"
+
+    # 验证服务存在性
+    if ! docker compose -f "$COMPOSE_FILE" config --services | grep -qx "$service"; then
+        error_exit "服务未在 compose 文件中定义: $service"
     fi
-    echo "服务 $service 已成功部署，并已连接到 mintcat 网络。"
+
+    # 执行部署
+    if ! docker compose -f "$COMPOSE_FILE" up -d "$service"; then
+        error_exit "服务部署失败: $service"
+    fi
+
+    # 网络连接检查
+    local container_id=$(docker compose -f "$COMPOSE_FILE" ps -q "$service")
+    if [ -z "$container_id" ]; then
+        error_exit "无法获取容器ID: $service"
+    fi
+
+    if ! docker network inspect mintcat --format '{{ .Containers }}' | grep -q "$container_id"; then
+        docker network connect mintcat "$container_id" || error_exit "网络连接失败"
+        log "INFO" "已连接容器到网络: $container_id -> mintcat"
+    fi
+
+    log "INFO" "部署完成: $service"
 }
 
 # ----------------------------
-# 主函数
+# 主流程
 # ----------------------------
 main() {
-    fetch_compose_file
-    select_service
-    create_network_and_volumes
-    deploy_service "$selected_service"
+    check_dependencies
+    safe_download
+    local services=($(parse_services))
+    local selected=$(select_service services)
+    setup_infrastructure
+    deploy_service "$selected"
 }
 
-# 执行主函数
-main
-
+main "$@"
