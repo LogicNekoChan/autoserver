@@ -5,7 +5,7 @@ set -eo pipefail
 readonly COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
 readonly COMPOSE_FILE="$(cd "$(dirname "$0")"; pwd)/docker-compose.yml"
 readonly LOG_FILE="$(cd "$(dirname "$0")"; pwd)/deploy.log"
-readonly REQUIRED_CMDS=("docker" "curl" "wget" "yq")  # 新增 yq 依赖
+readonly REQUIRED_CMDS=("docker" "curl" "wget" "jq")
 
 # ----------------------------
 # 日志记录函数
@@ -38,14 +38,9 @@ check_dependencies() {
 
     [ ${#missing[@]} -gt 0 ] && error_exit "缺少必要命令: ${missing[*]}"
     
-    # 检查 Docker Compose V2 可用性
+    # 验证 Docker Compose 版本
     if ! docker compose version &>/dev/null; then
-        error_exit "需要 Docker Compose V2 支持，请参考官方文档安装"
-    fi
-
-    # 检查 yq 版本
-    if ! yq --version | grep -q 'version 4'; then
-        error_exit "需要 yq 版本 4.x，请安装最新版：https://github.com/mikefarah/yq"
+        error_exit "需要 Docker Compose V2.4+"
     fi
 }
 
@@ -64,8 +59,8 @@ safe_download() {
         wget -qO "$temp_file" "$COMPOSE_URL" || error_exit "下载失败 (WGET错误码: $?)"
     fi
 
-    # 验证文件有效性
-    if ! yq e '.version' "$temp_file" &>/dev/null; then
+    # 验证 compose 文件有效性
+    if ! docker compose -f "$temp_file" config >/dev/null; then
         error_exit "下载文件格式异常，不是有效的 docker-compose 文件"
     fi
 
@@ -74,14 +69,20 @@ safe_download() {
 }
 
 # ----------------------------
-# 动态解析服务列表（保持 compose 文件中的原始顺序）
+# 动态解析服务列表
 # ----------------------------
 parse_services() {
     log "INFO" "开始解析 compose 文件服务列表"
     
-    # 使用 yq 按顺序提取服务名称
+    # 生成标准化配置并转换为 JSON
+    local compose_json
+    if ! compose_json=$(docker compose -f "$COMPOSE_FILE" config --format json); then
+        error_exit "解析 compose 文件失败"
+    fi
+    
+    # 使用 jq 提取服务列表（按字母顺序排序）
     local services=()
-    mapfile -t services < <(yq e '.services | keys | .[]' "$COMPOSE_FILE")
+    mapfile -t services < <(echo "$compose_json" | jq -r '.services | keys[]' | sort)
     
     if [ ${#services[@]} -eq 0 ]; then
         error_exit "compose 文件中未定义任何服务"
@@ -92,12 +93,12 @@ parse_services() {
 }
 
 # ----------------------------
-# 交互式服务选择（固定顺序）
+# 交互式服务选择
 # ----------------------------
 select_service() {
     local -n services_ref=$1
     
-    echo "可用服务列表 (按 compose 文件顺序排列):"
+    echo "可用服务列表 (按字母顺序排列):"
     for i in "${!services_ref[@]}"; do
         printf "%2d) %s\n" "$((i+1))" "${services_ref[i]}"
     done
@@ -124,8 +125,9 @@ setup_infrastructure() {
     fi
 
     # 自动创建 compose 文件中定义的所有 volumes
-    local volumes=()
-    mapfile -t volumes < <(yq e '.volumes | keys | .[]' "$COMPOSE_FILE")
+    local compose_json
+    compose_json=$(docker compose -f "$COMPOSE_FILE" config --format json)
+    mapfile -t volumes < <(echo "$compose_json" | jq -r '.volumes | keys[]')
     
     for vol in "${volumes[@]}"; do
         if ! docker volume inspect "$vol" &>/dev/null; then
@@ -143,7 +145,7 @@ deploy_service() {
     log "INFO" "开始部署服务: $service"
 
     # 验证服务存在性
-    if ! yq e ".services.${service}" "$COMPOSE_FILE" &>/dev/null; then
+    if ! jq -e ".services.\"${service}\"" <(docker compose -f "$COMPOSE_FILE" config --format json) &>/dev/null; then
         error_exit "服务未在 compose 文件中定义: $service"
     fi
 
