@@ -1,30 +1,47 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+  # 基础设施服务
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
     restart: unless-stopped
-    command: --cleanup
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-admin123}
+      MYSQL_DATABASE: bitwarden
+      MYSQL_USER: bitwarden
+      MYSQL_PASSWORD: ${MYSQL_BITWARDEN_PASSWORD:-password}
+    volumes:
+      - mysql_data:/var/lib/mysql
     networks:
       mintcat:
-        ipv4_address: 172.21.10.9
+        ipv4_address: 172.21.10.6
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  xui:
-    image: enwaiax/x-ui:alpha-zh
-    container_name: xui
-    volumes:
-      - xui_db:/etc/x-ui/
-      - xui_cert:/root/cert/
+  # 安全服务
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
     restart: unless-stopped
+    volumes:
+      - vaultwarden_data:/data
+    environment:
+      DATABASE_URL: "mysql://bitwarden:$${MYSQL_BITWARDEN_PASSWORD}@mysql/bitwarden"
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:-changeme}
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       mintcat:
-        ipv4_address: 172.21.10.8
+        ipv4_address: 172.21.10.5
 
+  # 网络管理
   nginx:
-    image: jc21/nginx-proxy-manager
+    image: jc21/nginx-proxy-manager:latest
     container_name: nginx
     restart: unless-stopped
     ports:
@@ -37,53 +54,12 @@ services:
     networks:
       mintcat:
         ipv4_address: 172.21.10.7
-
-  mysql:
-    image: mysql:latest
-    container_name: mysql
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=admin123
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      mintcat:
-        ipv4_address: 172.21.10.6
-
-  vaultwarden:
-    image: vaultwarden/server:latest
-    container_name: vaultwarden
-    restart: unless-stopped
-    volumes:
-      - vaultwarden_data:/data
-    environment:
-      - DATABASE_URL=mysql://bitwarden:password@172.21.10.6/bitwarden
-      - PUID=0
-      - PGID=0
     depends_on:
       - mysql
-    networks:
-      mintcat:
-        ipv4_address: 172.21.10.5
 
-  portainer_agent:
-    image: portainer/agent:2.21.5
-    container_name: portainer_agent
-    restart: unless-stopped
-    ports:
-      - "9001:9001"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker/volumes:/var/lib/docker/volumes
-      - /:/host
-    networks:
-      mintcat:
-        ipv4_address: 172.21.10.4
-
+  # 容器管理
   portainer_ce:
-    image: portainer/portainer-ce:lts
+    image: portainer/portainer-ce:2.21.5
     container_name: portainer_ce
     restart: unless-stopped
     ports:
@@ -97,8 +73,48 @@ services:
       mintcat:
         ipv4_address: 172.21.10.3
 
+  portainer_agent:
+    image: portainer/agent:2.21.5
+    container_name: portainer_agent
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.4
+
+  # 运维工具
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --cleanup --schedule "0 3 * * *"
+    restart: unless-stopped
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.9
+
+  # 开发工具
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 1G
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.1
+
+  # 网络服务
   tor:
-    image: dockurr/tor
+    image: dockurr/tor:latest
     container_name: tor
     restart: always
     volumes:
@@ -109,38 +125,42 @@ services:
         ipv4_address: 172.21.10.2
     stop_grace_period: 1m
 
-  phpmyadmin:
-    image: phpmyadmin:latest
-    container_name: phpmyadmin
+  # 代理服务
+  xui:
+    image: enwaiax/x-ui:alpha-zh
+    container_name: xui
+    volumes:
+      - xui_db:/etc/x-ui
+      - xui_cert:/root/cert
     restart: unless-stopped
-    environment:
-      - PMA_ARBITRARY=1
-      - PMA_HOST=172.21.10.6   # 使用本地域名连接 MySQL
-      - PMA_PORT=3306
-      - UPLOAD_LIMIT=10G
-    ports:
-      - "8082:80"
-    depends_on:
-      - mysql
     networks:
       mintcat:
-        ipv4_address: 172.21.10.1
+        ipv4_address: 172.21.10.8
 
 networks:
   mintcat:
     driver: bridge
     ipam:
       config:
-        - subnet: "172.21.0.0/16"  # 修改为不冲突的子网
+        - subnet: 172.21.0.0/16
           gateway: 172.21.0.1
 
 volumes:
   xui_db:
+    driver: local
   xui_cert:
+    driver: local
   nginx_data:
+    driver: local
   letsencrypt:
+    driver: local
   vaultwarden_data:
+    driver: local
   portainer_data:
+    driver: local
   tor_config:
+    driver: local
   tor_data:
+    driver: local
   mysql_data:
+    driver: local
