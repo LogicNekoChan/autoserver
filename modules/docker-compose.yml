@@ -23,15 +23,24 @@ services:
       retries: 3
 
   # 安全服务
-  vaultwarden:
-    image: vaultwarden/server:latest
-    container_name: vaultwarden
+  bitwarden:
+    image: bitwardenrs/server:latest
+    container_name: bitwarden
     restart: unless-stopped
     volumes:
-      - vaultwarden_data:/data
+      - bitwarden_data:/data
     environment:
-      DATABASE_URL: "mysql://bitwarden:$${MYSQL_BITWARDEN_PASSWORD}@mysql/bitwarden"
-      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:-changeme}
+      - WEBSOCKET_ENABLED=true
+      - SIGNUPS_ALLOWED=true
+      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme}
+      - DATABASE_TYPE=mysql
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_NAME=bitwarden
+      - DATABASE_USERNAME=bitwarden
+      - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-password}
+    ports:
+      - "8080:80"  # 将 Bitwarden 的 HTTP 端口映射到 8080
     depends_on:
       mysql:
         condition: service_healthy
@@ -154,7 +163,7 @@ volumes:
     driver: local
   letsencrypt:
     driver: local
-  vaultwarden_data:
+  bitwarden_data:
     driver: local
   portainer_data:
     driver: local
