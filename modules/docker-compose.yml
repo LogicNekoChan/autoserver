@@ -39,8 +39,6 @@ services:
       - DATABASE_NAME=bitwarden
       - DATABASE_USERNAME=bitwarden
       - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-password}
-    ports:
-      - "8080:80"  # 将 Bitwarden 的 HTTP 端口映射到 8080
     depends_on:
       mysql:
         condition: service_healthy
