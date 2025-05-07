@@ -39,9 +39,6 @@ services:
       - DATABASE_NAME=bitwarden
       - DATABASE_USERNAME=bitwarden
       - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-password}
-    depends_on:
-      mysql:
-        condition: service_healthy
     networks:
       mintcat:
         ipv4_address: 172.21.10.5
