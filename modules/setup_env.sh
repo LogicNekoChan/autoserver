@@ -6,7 +6,7 @@ set -eo pipefail
 # ----------------------------
 readonly LOG_FILE="/var/log/system_maintenance.log"
 readonly SSH_PORT=8848
-readonly SSH_PUBKEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzx8GlO5jVkNiwBG57J2zVwllC1WHQbRaFVI8H5u+fZnt3YuuIsCJBCRfM7/7Ups6wdEVwhgk+PEq8nE3WgZ8SBgNoAO+CgZprdDi+nx7zBRqrHw9oJcHQysiAw+arRW29g2TZgVhszjVq5G6MoVYGjnnPzLEcZS37by0l9eZD9u1hAB4FtIdw+VfrfJG177HLfiLkSm6PkO3QMWTYGmGjE3zpMxWeascWCn6UTDpjt6UiSMgcmAlx4FP8mkRRMc5TvxqnUKbgdjYBU2V+dZQx1keovrd0Yh8KitPEGd6euok3e7WmtLQlXH8WOiPlCr2YJfW3vQjlDVg5UU83GSGr root@mintcat"
+readonly SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
 readonly SWAP_SIZE="2048M"
 readonly DOCKER_NETWORK="mintcat"
 readonly DOCKER_SUBNET="172.20.0.0/16"
