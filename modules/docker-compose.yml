@@ -23,7 +23,7 @@ services:
       retries: 3
 
   # 安全服务
-  bitwarden:
+  vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
