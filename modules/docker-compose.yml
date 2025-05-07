@@ -24,11 +24,11 @@ services:
 
   # 安全服务
   bitwarden:
-    image: bitwarden/server:latest
-    container_name: bitwarden
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
     restart: unless-stopped
     volumes:
-      - bitwarden_data:/data
+      - vaultwarden_data:/data
     environment:
       - WEBSOCKET_ENABLED=true
       - SIGNUPS_ALLOWED=true
