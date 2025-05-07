@@ -24,7 +24,7 @@ services:
 
   # 安全服务
   bitwarden:
-    image: bitwardenrs/server:latest
+    image: bitwarden/server:latest
     container_name: bitwarden
     restart: unless-stopped
     volumes:
