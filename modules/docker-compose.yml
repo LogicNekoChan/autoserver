@@ -161,7 +161,7 @@ volumes:
     driver: local
   letsencrypt:
     driver: local
-  bitwarden_data:
+  vaultwarden_data:
     driver: local
   portainer_data:
     driver: local
