@@ -229,17 +229,17 @@ restore_system() {
     done
 
     # 自动重新启动容器
-    local compose_file="${selected_backup}/docker-compose.yml"
-    if [ -f "$compose_file" ]; then
-        log_message "使用备份中的 docker-compose 文件重新启动容器"
-        docker-compose -f "$compose_file" up -d
-    else
-        handle_error "备份中未找到 docker-compose 文件，无法自动启动容器"
-    fi
+    local container_info=$(docker inspect "$target_container" --format '{{ json . }}')
+    local image=$(echo "$container_info" | jq -r '.Config.Image')
+    local ports=$(echo "$container_info" | jq -r '.NetworkSettings.Ports | to_entries | .[] | " $.key): $.value[0].HostPort)"')
+    local volumes=$(echo "$container_info" | jq -r '.Mounts | .[] | " $.Source): $.Destination)"')
+    local env=$(echo "$container_info" | jq -r '.Config.Env | .[]')
+
+    log_message "使用解析的配置重新启动容器: $container_name"
+    docker run -d --name "$container_name" $ports $volumes $env "$image"
 
     echo -e "\n[√] 容器恢复完成"
 }
-
 
 # ----------------------------
 # 安全删除系统
