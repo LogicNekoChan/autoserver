@@ -198,14 +198,27 @@ setup_docker() {
     
     # 安全安装Docker
     if ! command -v docker &>/dev/null; then
-        curl -fsSL https://get.docker.com | safe_exec "sh -s -- --channel stable" || return 1
+        log "INFO" "安装Docker..."
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+        sh /tmp/get-docker.sh --channel stable || {
+            log "ERROR" "Docker安装失败"
+            return 1
+        }
         safe_exec "systemctl enable --now docker"
+    else
+        log "INFO" "Docker已安装，跳过安装步骤"
     fi
     
     # 安装Docker Compose
-    local compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.tag_name')
-    safe_exec "curl -L https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose"
-    safe_exec "chmod +x /usr/local/bin/docker-compose"
+    local compose_version
+    compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.tag_name')
+    if ! command -v docker-compose &>/dev/null; then
+        log "INFO" "安装Docker Compose..."
+        safe_exec "curl -L https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose"
+        safe_exec "chmod +x /usr/local/bin/docker-compose"
+    else
+        log "INFO" "Docker Compose已安装，跳过安装步骤"
+    fi
     
     # 创建专用网络
     if ! docker network inspect "${DOCKER_NETWORK}" &>/dev/null; then
