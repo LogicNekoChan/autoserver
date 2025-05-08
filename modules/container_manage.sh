@@ -209,12 +209,11 @@ restore_system() {
     universal_selector containers "请输入容器序号" 3
     local target_container="${containers[$?]}"
 
-    # 停止并清理旧容器
-    graceful_stop "$target_container"
-    safe_clean_mounts "$target_container"
-    docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
+    # 暂停容器
+    log_message "暂停容器: $target_container"
+    docker stop "$target_container" || handle_error "无法暂停容器"
 
-    # 数据恢复
+    # 替换映射卷
     for backup_file in "${backup_files[@]}"; do
         local path_name=$(basename "$backup_file" .tar.gz)
         local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
@@ -228,15 +227,9 @@ restore_system() {
         fi
     done
 
-    # 自动重新启动容器
-    local container_info=$(docker inspect "$target_container" --format '{{ json . }}')
-    local image=$(echo "$container_info" | jq -r '.Config.Image')
-    local ports=$(echo "$container_info" | jq -r '.NetworkSettings.Ports | to_entries | .[] | " $.key): $.value[0].HostPort)"')
-    local volumes=$(echo "$container_info" | jq -r '.Mounts | .[] | " $.Source): $.Destination)"')
-    local env=$(echo "$container_info" | jq -r '.Config.Env | .[]')
-
-    log_message "使用解析的配置重新启动容器: $container_name"
-    docker run -d --name "$container_name" $ports $volumes $env "$image"
+    # 重启容器
+    log_message "重启容器: $target_container"
+    docker start "$target_container" || handle_error "无法启动容器"
 
     echo -e "\n[√] 容器恢复完成"
 }
