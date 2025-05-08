@@ -1,9 +1,9 @@
-好的，以下是完整优化后的代码，包括对`backup_system`函数的优化，以及其他模块的微调，以确保整体逻辑更加完善和清晰：
+好的，以下是完整的代码，包括从指定的`docker-compose.yml`文件 URL 下载并部署容器的功能。代码中会读取`docker-compose.yml`文件的内容，解析其中的配置，并按照配置部署容器。
 
 
 ```bash
 #!/bin/bash
-# 容器管理模块（备份、恢复、删除） - 优化版
+# 容器管理模块（备份、恢复、删除、部署） - 优化版
 
 # ----------------------------
 # 初始化配置
@@ -11,7 +11,8 @@
 BACKUP_DIR="/root/backup"
 LOG_FILE="/root/autoserver.log"
 DOCKER_DATA_DIR="/var/lib/docker"
-DEPENDENCIES=("docker" "jq" "tar")
+DOCKER_COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
+DEPENDENCIES=("docker" "jq" "tar" "curl" "docker-compose")
 
 # ----------------------------
 # 预检模块
@@ -224,12 +225,13 @@ restore_system() {
             # 数据恢复
             for backup_file in "${backup_files[@]}"; do
                 local path_name=$(basename "$backup_file" .tar.gz)
+                local restore
                 local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
                 
                 mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
                 log_message "正在恢复: $backup_file → $restore_path"
                 
-                if tar - xzf "$backup_file" -C "$restore_path"; then
+                if tar -xzf "$backup_file" -C "$restore_path"; then
                     log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
                 else
                     handle_error "恢复失败: $backup_file"
@@ -272,6 +274,26 @@ delete_system() {
 }
 
 # ----------------------------
+# 容器部署模块
+# ----------------------------
+deploy_containers() {
+    echo "正在从 URL 下载 docker-compose 文件..."
+    local compose_file="/tmp/docker-compose.yml"
+    
+    if ! curl -fsSL "$DOCKER_COMPOSE_URL" -o "$compose_file"; then
+        handle_error "下载 docker-compose 文件失败"
+    fi
+
+    echo "正在部署容器..."
+    if docker-compose -f "$compose_file" up -d; then
+        log_message "容器部署成功"
+        echo -e "\n[√] 容器部署完成"
+    else
+        handle_error "容器部署失败"
+    fi
+}
+
+# ----------------------------
 # 主界面
 # ----------------------------
 show_menu() {
@@ -281,7 +303,8 @@ show_menu() {
     echo "1) 容器备份"
     echo "2) 数据恢复"
     echo "3) 容器删除"
-    echo "4) 退出"
+    echo "4) 部署容器"
+    echo "5) 退出"
     echo "--------------------------------"
     
     while true; do
@@ -290,7 +313,8 @@ show_menu() {
             1) backup_system ;;
             2) restore_system ;;
             3) delete_system ;;
-            4) exit 0 ;;
+            4) deploy_containers ;;
+            5) exit 0 ;;
             *) echo "无效选择，请重新输入" ;;
         esac
         echo  # 保持空行分隔
@@ -309,3 +333,4 @@ main() {
 
 # 启动主程序
 main
+                
