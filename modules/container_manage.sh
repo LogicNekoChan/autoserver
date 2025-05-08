@@ -140,10 +140,10 @@ backup_system() {
     universal_selector containers "请输入容器序号" 3
     local selected_container="${containers[$?]}"
 
-    # 获取挂载点信息
-    local mount_points=($(docker inspect "$selected_container" | jq -r '.[].Mounts[] | select(.Type=="bind" or .Type=="volume") | .Source'))
-    if [ ${#mount_points[@]} -eq 0 ]; then
-        handle_error "没有找到挂载点"
+    # 获取容器的挂载卷信息
+    local mounts=($(docker inspect --format '{{ range .Mounts }}{{ .Source }}:{{ .Destination }} {{ end }}' "$selected_container"))
+    if [ ${#mounts[@]} -eq 0 ]; then
+        handle_error "没有找到挂载卷"
     fi
 
     # 创建备份目录
@@ -153,23 +153,19 @@ backup_system() {
 
     # 执行备份
     local backup_count=0
-    local total_mounts=${#mount_points[@]}
-    for path in "${mount_points[@]}"; do
-        backup_count=$((backup_count + 1))
-        local safe_path=$(realpath "$path" 2>/dev/null)
-        if [[ "$safe_path" != $DOCKER_DATA_DIR/* ]]; then
-            handle_error "检测到非Docker路径: $path"
-        fi
+    local total_mounts=${#mounts[@]}
+    for mount in "${mounts[@]}"; do
+        local source=$(echo "$mount" | cut -d: -f1)
+        local destination=$(echo "$mount" | cut -d: -f2)
+        local backup_file="${backup_path}/$(basename "$destination").tar.gz"
 
-        local mount_type=$(docker inspect "$selected_container" | jq -r --arg path "$path" '.[].Mounts[] | select(.Source==$path) | .Type')
-
-        local backup_file="${backup_path}/${mount_type}_$(basename "$path").tar.gz"
-        log_message "正在备份: $path → $backup_file (进度: $backup_count/$total_mounts)"
+        log_message "正在备份: $destination → $backup_file (进度: $((++backup_count))/$total_mounts)"
         
-        if tar -czf "$backup_file" -C "$(dirname "$path")" "$(basename "$path")" 2>/dev/null; then
-            log_message "备份成功 (大小: $(du -h "$backup_file" | cut -f1))"
+        if tar -czf "$backup_file" -C "$(dirname "$source")" "$(basename "$source")" 2>/dev/null; then
+            local backup_size=$(du -h "$backup_file" | cut -f1)
+            log_message "备份成功 (大小: $backup_size)"
         else
-            handle_error "备份失败: $path"
+            handle_error "备份失败: $destination"
         fi
     done
 
@@ -213,15 +209,21 @@ restore_system() {
     log_message "暂停容器: $target_container"
     docker stop "$target_container" || handle_error "无法暂停容器"
 
-    # 替换映射卷
-    for backup_file in "${backup_files[@]}"; do
-        local path_name=$(basename "$backup_file" .tar.gz)
-        local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
-        mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
-        log_message "正在恢复: $backup_file → $restore_path"
-        
-        if tar -xzf "$backup_file" -C "$restore_path"; then
-            log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
+    # 获取容器的挂载卷信息
+    local mounts=($(docker inspect --format '{{ range .Mounts }}{{ .Source }}:{{ .Destination }} {{ end }}' "$target_container"))
+    for mount in "${mounts[@]}"; do
+        local source=$(echo "$mount" | cut -d: -f1)
+        local destination=$(echo "$mount" | cut -d: -f2)
+        local backup_file=$(find "$selected_backup" -name "$(basename "$destination").tar.gz")
+
+        if [ -z "$backup_file" ]; then
+            log_message "未找到备份文件: $destination"
+            continue
+        fi
+
+        log_message "正在恢复: $backup_file → $source"
+        if tar -xzf "$backup_file" -C "$(dirname "$source")"; then
+            log_message "恢复成功 (内容: $(ls "$source" | wc -l) 项)"
         else
             handle_error "恢复失败: $backup_file"
         fi
