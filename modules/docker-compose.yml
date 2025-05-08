@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: admin123
+      MYSQL_DATABASE: alist
+      MYSQL_USER: alist
+      MYSQL_PASSWORD: alist_password
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -149,6 +152,17 @@ services:
       - PUID=0
       - PGID=0
       - UMASK=022
+      - DB_TYPE=mysql
+      - DB_HOST=172.21.10.6
+      - DB_PORT=3306
+      - DB_USERNAME=alist
+      - DB_PASSWORD=alist_password
+      - DB_NAME=alist
+    ports:
+      - "5244:5244"
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       mintcat:
         ipv4_address: 172.21.10.10
