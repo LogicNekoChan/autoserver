@@ -227,8 +227,7 @@ restore_system() {
             docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
 
             # 数据恢复
-            for backup_file in
-            "${backup_files[@]}"; do
+            for backup_file in "${backup_files[@]}"; do
                 local path_name=$(basename "$backup_file" .tar.gz)
                 local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
                 mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
