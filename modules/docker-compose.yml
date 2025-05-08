@@ -152,12 +152,6 @@ services:
       - PUID=0
       - PGID=0
       - UMASK=022
-      - DB_TYPE=mysql
-      - DB_HOST=172.21.10.6
-      - DB_PORT=3306
-      - DB_USERNAME=alist
-      - DB_PASSWORD=alist_password
-      - DB_NAME=alist
     ports:
       - "5244:5244"
     depends_on:
