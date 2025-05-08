@@ -198,53 +198,40 @@ restore_system() {
         handle_error "备份集损坏"
     fi
 
-    # 容器操作选择
-    local options=("创建新容器" "替换现有容器")
-    echo "选择恢复方式:"
-    universal_selector options "请选择恢复方式" 3
-    local restore_type="${options[$?]}"
+    # 检查是否存在同名容器
+    local containers=($(docker ps -a --filter "name=$container_name" --format "{{.Names}}"))
+    if [ ${#containers[@]} -eq 0 ]; then
+        handle_error "找不到同名容器"
+    fi
 
-    # 执行恢复逻辑
-    case "$restore_type" in
-        "创建新容器")
-            echo "请提供新容器配置..."
-            # TODO: 实现容器创建逻辑
-            ;;
-        "替换现有容器")
-            local containers=($(docker ps -a --filter "name=$container_name" --format "{{.Names}}"))
-            if [ ${#containers[@]} -eq 0 ]; then
-                handle_error "找不到同名容器"
-            fi
-            
-            # 容器选择
-            echo "选择要替换的容器:"
-            universal_selector containers "请输入容器序号" 3
-            local target_container="${containers[$?]}"
+    # 容器选择
+    echo "选择要替换的容器:"
+    universal_selector containers "请输入容器序号" 3
+    local target_container="${containers[$?]}"
 
-            # 停止并清理旧容器
-            graceful_stop "$target_container"
-            safe_clean_mounts "$target_container"
-            docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
+    # 停止并清理旧容器
+    graceful_stop "$target_container"
+    safe_clean_mounts "$target_container"
+    docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
 
-            # 数据恢复
-            for backup_file in "${backup_files[@]}"; do
-                local path_name=$(basename "$backup_file" .tar.gz)
-                local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
-                mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
-                log_message "正在恢复: $backup_file → $restore_path"
-                
-                if tar -xzf "$backup_file" -C "$restore_path"; then
-                    log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
-                else
-                    handle_error "恢复失败: $backup_file"
-                fi
-            done
+    # 数据恢复
+    for backup_file in "${backup_files[@]}"; do
+        local path_name=$(basename "$backup_file" .tar.gz)
+        local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
+        mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
+        log_message "正在恢复: $backup_file → $restore_path"
+        
+        if tar -xzf "$backup_file" -C "$restore_path"; then
+            log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
+        else
+            handle_error "恢复失败: $backup_file"
+        fi
+    done
 
-            # 提示用户手动重新创建容器
-            echo -e "\n[√] 数据恢复完成，请手动重新创建容器"
-            ;;
-    esac
+    # 提示用户手动重新启动容器
+    echo -e "\n[√] 数据恢复完成，请手动重新启动容器"
 }
+
 
 # ----------------------------
 # 安全删除系统
