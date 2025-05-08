@@ -92,14 +92,6 @@ configure_ssh() {
     safe_exec "mkdir -p ${ssh_dir} && chmod 700 ${ssh_dir}"
     echo "${SSH_PUBKEY}" | safe_exec "tee -a ${ssh_dir}/authorized_keys && chmod 600 ${ssh_dir}/authorized_keys"
     
-    # 配置防火墙
-    if command -v ufw &>/dev/null; then
-        safe_exec "ufw allow ${SSH_PORT}/tcp"
-        safe_exec "ufw reload"
-    else
-        safe_exec "iptables -A INPUT -p tcp --dport ${SSH_PORT} -j ACCEPT"
-        safe_exec "iptables-save > /etc/iptables/rules.v4"
-    fi
     
     # 测试配置有效性
     if ! safe_exec "sshd -t"; then
