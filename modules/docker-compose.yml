@@ -7,10 +7,7 @@ services:
     container_name: mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-admin123}
-      MYSQL_DATABASE: bitwarden
-      MYSQL_USER: bitwarden
-      MYSQL_PASSWORD: ${MYSQL_BITWARDEN_PASSWORD:-password}
+      MYSQL_ROOT_PASSWORD: admin123
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -106,7 +103,7 @@ services:
     container_name: phpmyadmin
     restart: unless-stopped
     environment:
-      PMA_HOST: mysql
+      PMA_HOST: 172.21.10.6
       PMA_PORT: 3306
       UPLOAD_LIMIT: 1G
     depends_on:
