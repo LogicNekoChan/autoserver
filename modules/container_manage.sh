@@ -228,8 +228,16 @@ restore_system() {
         fi
     done
 
-    # 提示用户手动重新启动容器
-    echo -e "\n[√] 数据恢复完成，请手动重新启动容器"
+    # 自动重新启动容器
+    local compose_file="${selected_backup}/docker-compose.yml"
+    if [ -f "$compose_file" ]; then
+        log_message "使用备份中的 docker-compose 文件重新启动容器"
+        docker-compose -f "$compose_file" up -d
+    else
+        handle_error "备份中未找到 docker-compose 文件，无法自动启动容器"
+    fi
+
+    echo -e "\n[√] 容器恢复完成"
 }
 
 
