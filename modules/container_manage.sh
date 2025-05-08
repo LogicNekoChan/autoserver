@@ -279,9 +279,6 @@ delete_system() {
     fi
 }
 
-# ----------------------------
-# 容器部署模块
-# ----------------------------
 deploy_containers() {
     echo "[INFO] 正在从 URL 下载 docker-compose 文件: $DOCKER_COMPOSE_URL"
     local compose_file="/tmp/docker-compose.yml"
@@ -292,16 +289,36 @@ deploy_containers() {
 
     echo "[INFO] 文件已安全保存到: $compose_file"
     
-    echo "正在部署容器..."
-    if docker-compose -f "$compose_file" up -d; then
-        log_message "容器部署成功"
-        echo -e "\n[√] 容器部署完成"
-        echo "部署的容器列表："
-        docker-compose -f "$compose_file" ps
+    # 解析 docker-compose 文件中的服务
+    local services=($(docker-compose -f "$compose_file" config --services))
+    if [ ${#services[@]} -eq 0 ]; then
+        handle_error "未找到任何服务定义"
+    fi
+
+    # 显示服务列表并让用户选择
+    echo "请选择要部署的服务编号："
+    for i in "${!services[@]}"; do
+        printf "%3d) %s\n" $((i+1)) "${services[i]}"
+    done
+
+    read -rp "请输入服务编号 (1-${#services[@]}): " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#services[@]}" ]; then
+        selected_service="${services[$((choice-1))]}"
     else
-        handle_error "容器部署失败"
+        handle_error "无效的服务编号"
+    fi
+
+    echo "正在部署服务: $selected_service"
+    if docker-compose -f "$compose_file" up -d "$selected_service"; then
+        log_message "服务 $selected_service 部署成功"
+        echo -e "\n[√] 服务 $selected_service 部署完成"
+        echo "部署的服务状态："
+        docker-compose -f "$compose_file" ps "$selected_service"
+    else
+        handle_error "服务 $selected_service 部署失败"
     fi
 }
+
 
 # ----------------------------
 # 主界面
