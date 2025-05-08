@@ -1,4 +1,4 @@
-好的，以下是完整的代码，包括从指定的`docker-compose.yml`文件 URL 下载并部署容器的功能。代码中会读取`docker-compose.yml`文件的内容，解析其中的配置，并按照配置部署容器。
+好的，以下是完整的脚本代码，包括改进后的`deploy_containers`函数，确保在容器部署完成后能够显示容器编号和名称等信息：
 
 
 ```bash
@@ -226,8 +226,8 @@ restore_system() {
             for backup_file in "${backup_files[@]}"; do
                 local path_name=$(basename "$backup_file" .tar.gz)
                 local restore
-                local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
-                
+                local restore_path="${DOCKER_DATA_DIR}/volumes/$path
+                                path_name}"
                 mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
                 log_message "正在恢复: $backup_file → $restore_path"
                 
@@ -288,6 +288,9 @@ deploy_containers() {
     if docker-compose -f "$compose_file" up -d; then
         log_message "容器部署成功"
         echo -e "\n[√] 容器部署完成"
+        echo "部署的容器列表："
+        # 查询并打印新部署的容器信息
+        docker-compose -f "$compose_file" ps
     else
         handle_error "容器部署失败"
     fi
@@ -333,4 +336,3 @@ main() {
 
 # 启动主程序
 main
-                
