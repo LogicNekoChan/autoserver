@@ -138,6 +138,21 @@ services:
       mintcat:
         ipv4_address: 172.21.10.8
 
+  # 文件管理服务
+  alist:
+    image: xhofe/alist:latest
+    container_name: alist
+    restart: always
+    volumes:
+      - alist_data:/opt/alist/data
+    environment:
+      - PUID=0
+      - PGID=0
+      - UMASK=022
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.10
+
 networks:
   mintcat:
     driver: bridge
@@ -164,4 +179,6 @@ volumes:
   tor_data:
     driver: local
   mysql_data:
+    driver: local
+  alist_data:
     driver: local
