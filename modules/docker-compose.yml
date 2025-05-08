@@ -34,10 +34,10 @@ services:
       - SIGNUPS_ALLOWED=true
       - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme}
       - DATABASE_TYPE=mysql
-      - DATABASE_HOST=mysql
+      - DATABASE_HOST=172.21.10.6
       - DATABASE_PORT=3306
-      - DATABASE_NAME=bitwarden
-      - DATABASE_USERNAME=bitwarden
+      - DATABASE_NAME=vaultwarden
+      - DATABASE_USERNAME=vaultwarden
       - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-password}
     networks:
       mintcat:
