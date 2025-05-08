@@ -1,5 +1,9 @@
+好的，以下是完整优化后的代码，包括对`backup_system`函数的优化，以及其他模块的微调，以确保整体逻辑更加完善和清晰：
+
+
+```bash
 #!/bin/bash
-# 容器管理模块（备份、恢复、删除） - 无颜色版
+# 容器管理模块（备份、恢复、删除） - 优化版
 
 # ----------------------------
 # 初始化配置
@@ -149,13 +153,19 @@ backup_system() {
     mkdir -p "$backup_path" || handle_error "无法创建备份目录"
 
     # 执行备份
+    local backup_count=0
+    local total_mounts=${#mount_points[@]}
     for path in "${mount_points[@]}"; do
+        backup_count=$((backup_count + 1))
         local safe_path=$(realpath "$path" 2>/dev/null)
         [[ "$safe_path" != $DOCKER_DATA_DIR/* ]] && \
             handle_error "检测到非Docker路径: $path"
 
-        local backup_file="${backup_path}/$(basename "$path").tar.gz"
-        log_message "正在备份: $path → $backup_file"
+        local mount_type=$(docker inspect "$selected_container" | 
+            jq -r --arg path "$path" '.[].Mounts[] | select(.Source==$path) | .Type')
+
+        local backup_file="${backup_path}/${mount_type}_$(basename "$path").tar.gz"
+        log_message "正在备份: $path → $backup_file (进度: $backup_count/$total_mounts)"
         
         if tar -czf "$backup_file" -C "$(dirname "$path")" "$(basename "$path")" 2>/dev/null; then
             log_message "备份成功 (大小: $(du -h "$backup_file" | cut -f1))"
@@ -219,15 +229,15 @@ restore_system() {
                 mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
                 log_message "正在恢复: $backup_file → $restore_path"
                 
-                if tar -xzf "$backup_file" -C "$restore_path"; then
+                if tar - xzf "$backup_file" -C "$restore_path"; then
                     log_message "恢复成功 (内容: $(ls "$restore_path" | wc -l) 项)"
                 else
                     handle_error "恢复失败: $backup_file"
                 fi
             done
 
-            # TODO: 实现容器重新创建
-            echo -e "\n[√] 恢复完成，请手动重新创建容器"
+            # 提示用户手动重新创建容器
+            echo -e "\n[√] 数据恢复完成，请手动重新创建容器"
             ;;
     esac
 }
@@ -297,4 +307,5 @@ main() {
     show_menu
 }
 
+# 启动主程序
 main
