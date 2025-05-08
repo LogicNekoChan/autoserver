@@ -1,4 +1,4 @@
-好的，以下是完整的脚本代码，包括改进后的`deploy_containers`函数，确保在容器部署完成后能够显示容器编号和名称等信息：
+好的，我将对你的脚本进行优化，确保代码更加清晰、高效，并且修复一些潜在的问题。以下是优化后的完整脚本代码：
 
 
 ```bash
@@ -19,7 +19,9 @@ DEPENDENCIES=("docker" "jq" "tar" "curl" "docker-compose")
 # ----------------------------
 preflight_check() {
     # 必须使用 root 用户运行
-    [ "$(id -u)" != "0" ] && handle_error "必须使用 root 用户运行"
+    if [ "$(id -u)" != "0" ]; then
+        handle_error "必须使用 root 用户运行"
+    fi
 
     # 检查依赖项
     local missing=()
@@ -29,7 +31,9 @@ preflight_check() {
         fi
     done
 
-    [ ${#missing[@]} -gt 0 ] && handle_error "缺少依赖: ${missing[*]}"$'\n'"请执行：apt install ${missing[*]}"
+    if [ ${#missing[@]} -gt 0 ]; then
+        handle_error "缺少依赖: ${missing[*]}"$'\n'"请执行：apt install ${missing[*]}"
+    fi
 }
 
 # ----------------------------
@@ -41,8 +45,9 @@ log_message() {
     [ -z "$log_size" ] && log_size=0
 
     # 日志轮转 (10MB)
-    [ "$log_size" -gt 10485760 ] && \
+    if [ "$log_size" -gt 10485760 ]; then
         mv "$LOG_FILE" "${LOG_FILE}.old"
+    fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
 }
@@ -65,7 +70,9 @@ universal_selector() {
     local prompt=$2
     local max_retry=${3:-3}
     
-    [ ${#items[@]} -eq 0 ] && handle_error "没有可选项"
+    if [ ${#items[@]} -eq 0 ]; then
+        handle_error "没有可选项"
+    fi
 
     for ((attempt=1; attempt<=max_retry; attempt++)); do
         # 显示带序号的选项
@@ -74,9 +81,7 @@ universal_selector() {
         done
 
         read -rp "${prompt} [1-${#items[@]}]: " selection
-        if [[ "$selection" =~ ^[0-9]+$ ]] && 
-           [ "$selection" -ge 1 ] && 
-           [ "$selection" -le "${#items[@]}" ]; then
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#items[@]}" ]; then
             return $((selection-1))
         fi
         echo "输入无效，请重试 (剩余尝试次数: $((max_retry-attempt)))"
@@ -95,8 +100,7 @@ graceful_stop() {
     # 先尝试正常停止
     if ! docker stop "$container_id" >/dev/null 2>&1; then
         log_message "正常停止失败，尝试强制停止"
-        docker kill "$container_id" >/dev/null 2>&1 || \
-            handle_error "无法停止容器"
+        docker kill "$container_id" >/dev/null 2>&1 || handle_error "无法停止容器"
     fi
 }
 
@@ -108,24 +112,20 @@ safe_clean_mounts() {
     log_message "清理容器挂载点: $container_id"
 
     # 获取挂载信息
-    local mounts=($(docker inspect "$container_id" | 
-        jq -r '.[].Mounts[] | select(.Type=="bind") | .Source'))
+    local mounts=($(docker inspect "$container_id" | jq -r '.[].Mounts[] | select(.Type=="bind") | .Source'))
 
     # 逆序处理挂载点
     for ((i=${#mounts[@]}-1; i>=0; i--)); do
         local mnt="${mounts[i]}"
-        [ -d "$mnt" ] || continue
-        
-        # 卸载挂载点
-        if mountpoint -q "$mnt"; then
-            umount "$mnt" 2>/dev/null || \
-                log_message "警告: 无法卸载 $mnt (可能仍有进程访问)"
-        fi
+        if [ -d "$mnt" ]; then
+            # 卸载挂载点
+            if mountpoint -q "$mnt"; then
+                umount "$mnt" 2>/dev/null || log_message "警告: 无法卸载 $mnt (可能仍有进程访问)"
+            fi
 
-        # 删除目录
-        rm -rf "$mnt" 2>/dev/null && \
-            log_message "已清理目录: $mnt" || \
-            log_message "警告: 无法删除 $mnt"
+            # 删除目录
+            rm -rf "$mnt" 2>/dev/null && log_message "已清理目录: $mnt" || log_message "警告: 无法删除 $mnt"
+        fi
     done
 }
 
@@ -135,7 +135,9 @@ safe_clean_mounts() {
 backup_system() {
     # 获取运行中的容器列表
     local containers=($(docker ps --format "{{.Names}}"))
-    [ ${#containers[@]} -eq 0 ] && handle_error "没有运行中的容器"
+    if [ ${#containers[@]} -eq 0 ]; then
+        handle_error "没有运行中的容器"
+    fi
 
     # 容器选择
     echo "选择要备份的容器:"
@@ -143,10 +145,10 @@ backup_system() {
     local selected_container="${containers[$?]}"
 
     # 获取挂载点信息
-    local mount_points=($(docker inspect "$selected_container" | 
-        jq -r '.[].Mounts[] | select(.Type=="bind" or .Type=="volume") | .Source'))
-
-    [ ${#mount_points[@]} -eq 0 ] && handle_error "没有找到挂载点"
+    local mount_points=($(docker inspect "$selected_container" | jq -r '.[].Mounts[] | select(.Type=="bind" or .Type=="volume") | .Source'))
+    if [ ${#mount_points[@]} -eq 0 ]; then
+        handle_error "没有找到挂载点"
+    fi
 
     # 创建备份目录
     local timestamp=$(date +%Y%m%d-%H%M%S)
@@ -159,11 +161,11 @@ backup_system() {
     for path in "${mount_points[@]}"; do
         backup_count=$((backup_count + 1))
         local safe_path=$(realpath "$path" 2>/dev/null)
-        [[ "$safe_path" != $DOCKER_DATA_DIR/* ]] && \
+        if [[ "$safe_path" != $DOCKER_DATA_DIR/* ]]; then
             handle_error "检测到非Docker路径: $path"
+        fi
 
-        local mount_type=$(docker inspect "$selected_container" | 
-            jq -r --arg path "$path" '.[].Mounts[] | select(.Source==$path) | .Type')
+        local mount_type=$(docker inspect "$selected_container" | jq -r --arg path "$path" '.[].Mounts[] | select(.Source==$path) | .Type')
 
         local backup_file="${backup_path}/${mount_type}_$(basename "$path").tar.gz"
         log_message "正在备份: $path → $backup_file (进度: $backup_count/$total_mounts)"
@@ -184,7 +186,9 @@ backup_system() {
 restore_system() {
     # 获取备份集列表
     local backup_sets=($(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d))
-    [ ${#backup_sets[@]} -eq 0 ] && handle_error "没有找到备份集"
+    if [ ${#backup_sets[@]} -eq 0 ]; then
+        handle_error "没有找到备份集"
+    fi
 
     # 备份集选择
     echo "选择要恢复的备份集:"
@@ -194,7 +198,9 @@ restore_system() {
     # 解析备份信息
     local container_name=$(basename "$selected_backup" | cut -d_ -f1)
     local backup_files=("$selected_backup"/*.tar.gz)
-    [ ${#backup_files[@]} -eq 0 ] && handle_error "备份集损坏"
+    if [ ${#backup_files[@]} -eq 0 ]; then
+        handle_error "备份集损坏"
+    fi
 
     # 容器操作选择
     local options=("创建新容器" "替换现有容器")
@@ -210,7 +216,9 @@ restore_system() {
             ;;
         "替换现有容器")
             local containers=($(docker ps -a --filter "name=$container_name" --format "{{.Names}}"))
-            [ ${#containers[@]} -eq 0 ] && handle_error "找不到同名容器"
+            if [ ${#containers[@]} -eq 0 ]; then
+                handle_error "找不到同名容器"
+            fi
             
             # 容器选择
             echo "选择要替换的容器:"
@@ -223,11 +231,10 @@ restore_system() {
             docker rm -f "$target_container" >/dev/null || handle_error "无法删除旧容器"
 
             # 数据恢复
-            for backup_file in "${backup_files[@]}"; do
+            for backup_file in
+            "${backup_files[@]}"; do
                 local path_name=$(basename "$backup_file" .tar.gz)
-                local restore
-                local restore_path="${DOCKER_DATA_DIR}/volumes/$path
-                                path_name}"
+                local restore_path="${DOCKER_DATA_DIR}/volumes/$path_name"
                 mkdir -p "$restore_path" || handle_error "无法创建恢复目录"
                 log_message "正在恢复: $backup_file → $restore_path"
                 
@@ -250,7 +257,9 @@ restore_system() {
 delete_system() {
     # 获取所有容器列表
     local containers=($(docker ps -a --format "{{.Names}}"))
-    [ ${#containers[@]} -eq 0 ] && handle_error "没有可删除的容器"
+    if [ ${#containers[@]} -eq 0 ]; then
+        handle_error "没有可删除的容器"
+    fi
 
     # 容器选择
     echo "选择要删除的容器:"
@@ -259,17 +268,19 @@ delete_system() {
 
     # 确认流程
     read -rp "确认删除 $selected_container 及其所有数据？[y/N] " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || handle_error "操作已取消"
-
-    # 停止并删除
-    graceful_stop "$selected_container"
-    safe_clean_mounts "$selected_container"
-    
-    if docker rm -f "$selected_container" >/dev/null; then
-        log_message "已删除容器: $selected_container"
-        echo -e "\n[√] 删除成功"
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        # 停止并删除
+        graceful_stop "$selected_container"
+        safe_clean_mounts "$selected_container"
+        
+        if docker rm -f "$selected_container" >/dev/null; then
+            log_message "已删除容器: $selected_container"
+            echo -e "\n[√] 删除成功"
+        else
+            handle_error "删除失败"
+        fi
     else
-        handle_error "删除失败"
+        echo "操作已取消"
     fi
 }
 
@@ -277,19 +288,20 @@ delete_system() {
 # 容器部署模块
 # ----------------------------
 deploy_containers() {
-    echo "正在从 URL 下载 docker-compose 文件..."
+    echo "[INFO] 正在从 URL 下载 docker-compose 文件: $DOCKER_COMPOSE_URL"
     local compose_file="/tmp/docker-compose.yml"
     
     if ! curl -fsSL "$DOCKER_COMPOSE_URL" -o "$compose_file"; then
         handle_error "下载 docker-compose 文件失败"
     fi
 
+    echo "[INFO] 文件已安全保存到: $compose_file"
+    
     echo "正在部署容器..."
     if docker-compose -f "$compose_file" up -d; then
         log_message "容器部署成功"
         echo -e "\n[√] 容器部署完成"
         echo "部署的容器列表："
-        # 查询并打印新部署的容器信息
         docker-compose -f "$compose_file" ps
     else
         handle_error "容器部署失败"
@@ -336,3 +348,4 @@ main() {
 
 # 启动主程序
 main
+            
