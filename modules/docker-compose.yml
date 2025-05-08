@@ -58,8 +58,6 @@ services:
     networks:
       mintcat:
         ipv4_address: 172.21.10.7
-    depends_on:
-      - mysql
 
   # 容器管理
   portainer_ce:
