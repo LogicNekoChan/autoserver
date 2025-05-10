@@ -11,6 +11,7 @@ function main_menu() {
     echo "1. 一键部署环境"
     echo "2. 容器管理（部署/备份/恢复/删除）"
     echo "3. Crontab 任务管理"
+    echo "4. WireGuard 管理"  # 新增 WireGuard 管理选项
     echo "0. 退出"
     echo "============================================"
     read -p "请选择操作: " choice
@@ -18,6 +19,7 @@ function main_menu() {
         1) source "$(dirname "$0")/modules/setup_env.sh" ;;
         2) source "$(dirname "$0")/modules/container_manage.sh" ;;
         3) source "$(dirname "$0")/modules/crontab_manage.sh" ;;
+        4) source "$(dirname "$0")/modules/wireguard_manage.sh" ;;  # 调用 WireGuard 管理模块
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
     esac
