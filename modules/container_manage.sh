@@ -7,7 +7,7 @@
 BACKUP_DIR="/root/backup"
 LOG_FILE="/root/autoserver.log"
 DOCKER_DATA_DIR="/var/lib/docker"
-DOCKER_COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/modules/docker-compose.yml"
+DOCKER_COMPOSE_URL="https://raw.githubusercontent.com/LogicNekoChan/autoserver/refs/heads/main/utils/docker-compose.yml"
 DEPENDENCIES=("docker" "jq" "tar" "curl" "docker-compose")
 
 # ----------------------------
