@@ -165,7 +165,7 @@ services:
         ipv4_address: 172.21.10.10
 
   # WireGuard Easy
-  wg-easy:
+wg-easy:
     image: ghcr.io/wg-easy/wg-easy
     container_name: wg-easy
     restart: unless-stopped
@@ -174,11 +174,13 @@ services:
       - PASSWORD=your_admin_password      # 替换为你的管理员密码
       - WG_DEFAULT_ADDRESS=10.9.0.1/24   # 内网网段
       - WG_PERSISTENT_KEEPALIVE=25       # 心跳检测间隔时间，单位为秒
+      - WG_PORT=51822                     # 新增环境变量，指定 WireGuard 监听端口
     volumes:
       - wg-easy-data:/etc/wireguard
     ports:
       - "51820:51820/udp"  # WireGuard 协议端口
       - "51821:51821/tcp"  # 管理面板端口
+      - "51822:51822/udp"  # 新增的服务端口，假设是 WireGuard 的新端口
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
