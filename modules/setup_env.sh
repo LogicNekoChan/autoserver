@@ -5,7 +5,6 @@ set -eo pipefail
 # 全局配置
 # ----------------------------
 readonly LOG_FILE="/var/log/system_maintenance.log"
-readonly SSH_PORT=8848
 readonly SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
 readonly SWAP_SIZE="2048M"
 readonly DOCKER_NETWORK="mintcat"
@@ -39,13 +38,13 @@ log() {
 safe_exec() {
     local cmd="$@"
     log "DEBUG" "执行命令: ${cmd}"
-    
+
     if ! output=$(sudo bash -c "${cmd}" 2>&1); then
         log "ERROR" "命令执行失败: ${cmd}"
         log "ERROR" "错误输出: ${output}"
         return 1
     fi
-    
+
     log "DEBUG" "命令输出: ${output}"
     return 0
 }
@@ -56,7 +55,7 @@ safe_exec() {
 detect_os() {
     if [ -f /etc/os-release ]; then
         source /etc/os-release
-        echo "${ID}"
+        echo "${ID}":
     else
         log "ERROR" "无法检测操作系统"
         return 1
@@ -68,38 +67,36 @@ detect_os() {
 # ----------------------------
 configure_ssh() {
     local sshd_config="/etc/ssh/sshd_config"
-    
+
     log "INFO" "开始配置SSH安全设置"
-    
+
     # 备份原配置
     safe_exec cp "${sshd_config}" "${sshd_config}.bak" || return 1
-    
+
     # 修改配置参数
     declare -A ssh_params=(
-        ["Port"]="${SSH_PORT}"
         ["PubkeyAuthentication"]="yes"
         ["PasswordAuthentication"]="no"
         ["PermitRootLogin"]="prohibit-password"
         ["ClientAliveInterval"]="300"
     )
-    
+
     for key in "${!ssh_params[@]}"; do
         safe_exec "sed -i '/^#\?${key}[[:space:]]/c\\${key} ${ssh_params[$key]}' ${sshd_config}"
     done
-    
+
     # 添加SSH公钥
     local ssh_dir="/root/.ssh"
     safe_exec "mkdir -p ${ssh_dir} && chmod 700 ${ssh_dir}"
     echo "${SSH_PUBKEY}" | safe_exec "tee -a ${ssh_dir}/authorized_keys && chmod 600 ${ssh_dir}/authorized_keys"
-    
-    
+
     # 测试配置有效性
     if ! safe_exec "sshd -t"; then
         log "ERROR" "SSH配置测试失败，恢复备份文件"
         safe_exec "mv ${sshd_config}.bak ${sshd_config}"
         return 1
     fi
-    
+
     safe_exec "systemctl restart sshd"
     log "INFO" "SSH安全配置完成，新端口：${SSH_PORT}"
 }
@@ -107,14 +104,14 @@ configure_ssh() {
 # ----------------------------
 # 系统优化配置
 # ----------------------------
-optimize_system() {
+optimizes_system() {
     local os_type=$(detect_os)
-    
+
     # 公共优化
     safe_exec "timedatectl set-timezone Asia/Shanghai"
     safe_exec "sysctl -w net.ipv4.tcp_syncookies=1"
     safe_exec "sysctl -w net.ipv4.tcp_max_syn_backlog=8192"
-    
+
     case "${os_type}" in
         ubuntu|debian)
             safe_exec "apt-get -y update && apt-get -y install curl jq vim"
@@ -136,21 +133,21 @@ optimize_system() {
 # ----------------------------
 enable_bbr() {
     local sysctl_conf="/etc/sysctl.conf"
-    
+
     log "INFO" "启用BBR网络加速"
-    
+
     # 内核参数配置
     declare -A bbr_params=(
         ["net.core.default_qdisc"]="fq"
         ["net.ipv4.tcp_congestion_control"]="bbr"
     )
-    
-    for key in "${!bbr_params[@]}"; do
+
+    for key in "${!bbrr_params[@]}"; do
         if ! grep -q "^${key}" "${sysctl_conf}"; then
-            echo "${key} = ${bbr_params[$key]}" | safe_exec "tee -a ${sysctl_conf}"
+            echo "${key} = ${bbrr_params[$key]}" | safe_exec "tee -a ${sysctl_conf}"
         fi
     done
-    
+
     safe_exec "sysctl -p"
     log "INFO" "当前拥塞控制算法: $(sysctl net.ipv4.tcp_congestion_control)"
 }
@@ -160,34 +157,33 @@ enable_bbr() {
 # ----------------------------
 manage_swap() {
     local swap_file="/swapfile"
-    
+
     # 检查现有SWAP
     if swapon --show | grep -q "${swap_file}"; then
         log "INFO" "检测到现有SWAP文件，跳过创建"
         return 0
     fi
-    
+
     log "INFO" "创建SWAP文件: ${SWAP_SIZE}"
-    
     safe_exec "fallocate -l ${SWAP_SIZE} ${swap_file}"
     safe_exec "chmod 600 ${swap_file}"
     safe_exec "mkswap ${swap_file}"
     safe_exec "swapon ${swap_file}"
     safe_exec "echo '${swap_file} swap swap defaults 0 0' >> /etc/fstab"
-    
+
     # 调整Swappiness
     safe_exec "sysctl vm.swappiness=10"
     safe_exec "echo 'vm.swappiness=10' >> /etc/sysctl.conf"
-    
+
     log "INFO" "SWAP状态: $(swapon --show)"
 }
 
-# ----------------------------
+# ---------------------------- 
 # Docker环境部署
 # ----------------------------
 setup_docker() {
     log "INFO" "开始部署Docker环境"
-    
+
     # 安全安装Docker
     if ! command -v docker &>/dev/null; then
         log "INFO" "安装Docker..."
@@ -200,7 +196,7 @@ setup_docker() {
     else
         log "INFO" "Docker已安装，跳过安装步骤"
     fi
-    
+
     # 安装Docker Compose
     local compose_version
     compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.tag_name')
@@ -209,14 +205,14 @@ setup_docker() {
         safe_exec "curl -L https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose"
         safe_exec "chmod +x /usr/local/bin/docker-compose"
     else
-        log "INFO" "Docker Compose已安装，跳过安装步骤"
+        log "INFO" "Docker Compe已安装，跳过安装步骤"
     fi
-    
+
     # 创建专用网络
     if ! docker network inspect "${DOCKER_NETWORK}" &>/dev/null; then
         safe_exec "docker network create --driver bridge --subnet ${DOCKER_SUBNET} ${DOCKER_NETWORK}"
     fi
-    
+
     log "INFO" "Docker版本: $(docker --version)"
     log "INFO" "Docker Compose版本: $(docker-compose --version)"
 }
@@ -226,29 +222,28 @@ setup_docker() {
 # ----------------------------
 optimize_mirror() {
     local os_type=$(detect_os)
-    
+
     log "INFO" "开始优化软件源"
-    
+
     case "${os_type}" in
         ubuntu|debian)
             safe_exec "apt-get install -y netselect-apt"
             local mirror=$(netselect-apt -s -t 20 -o /dev/stdout | grep 'Best mirror' | awk '{print $3}')
             [ -z "${mirror}" ] && return 1
-            
+
             safe_exec "sed -i 's|http://.*\.archive\.ubuntu\.com|${mirror}|g' /etc/apt/sources.list"
             safe_exec "apt-get update"
-            ;;
+        ;;
         centos|rhel)
             safe_exec "yum install -y yum-utils"
             safe_exec "yum-config-manager --enable fastestmirror"
             safe_exec "yum clean all"
-            ;;
+        ;;
         *)
             log "ERROR" "不支持的操作系统: ${os_type}"
             return 1
-            ;;
     esac
-    
+
     log "INFO" "软件源优化完成"
 }
 
@@ -258,16 +253,16 @@ optimize_mirror() {
 show_menu() {
     while :; do
         clear
-        echo "==================================="
+        echo "====================================="
         echo "      系统维护管理平台 v2.0       "
-        echo "==================================="
+        echo "====================================="
         echo "1) 全自动系统初始化"
         echo "2) 安全加固配置"
         echo "3) 网络性能优化"
         echo "4) 容器环境部署"
         echo "5) 软件源加速"
         echo "6) 退出"
-        echo "==================================="
+        echo "====================================="
         
         read -p "请输入操作编号 (1-6): " choice
         case "${choice}" in
@@ -301,7 +296,7 @@ show_menu() {
                 exit 0
                 ;;
             *)
-                log "WARN" "无效的输入选项"
+                log "WARN" "无效的输入选例"
                 ;;
         esac
         
@@ -322,4 +317,3 @@ main() {
     show_menu
 }
 
-main "$@"
