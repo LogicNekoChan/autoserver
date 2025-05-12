@@ -1,9 +1,6 @@
 #!/bin/bash
 # WireGuard 管理模块
 
-# 加载公共函数
-source "$(dirname "$0")/autoserver/utils/common.sh"
-
 # 显示 WireGuard 管理菜单
 function wireguard_menu() {
     clear
