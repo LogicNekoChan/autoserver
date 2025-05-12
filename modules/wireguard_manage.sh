@@ -79,10 +79,15 @@ function view_config() {
     fi
 }
 
-# 列出所有可用的 WireGuard 配置文件
 function list_configs() {
-    local configs=($(sudo find /etc/wireguard -type f -name "*.conf" 2>/dev/null)
-                || echo "没有找到任何 WireGuard 配置文件！"))
+    local configs
+    if sudo find /etc/wireguard -type f -name "*.conf" 2>/dev/null; then
+        configs=($(echo "$configs"))
+    else
+        echo "没有找到任何 WireGuard 配置文件！"
+        return 1
+    fi
+
     if [ ${#configs[@]} -eq 0 ]; then
         echo "没有找到任何 WireGuard 配置文件！"
         return 1
