@@ -114,12 +114,12 @@ optimizes_system() {
 
     case "${os_type}" in
         ubuntu|debian)
-            safe_exec "apt-get -y update && apt-get -y install curl jq vim"
+            safe_exec "apt-get -y update && apt-get -y install curl jq vim neofetch"
             safe_exec "sysctl -p /etc/sysctl.conf"
             ;;
         centos|rhel)
             safe_exec "yum install -y epel-release"
-            safe_exec "yum install -y curl jq vim"
+            safe_exec "yum install -y curl jq vim neofetch"
             ;;
         *)
             log "ERROR" "不支持的操作系统: ${os_type}"
