@@ -4,6 +4,7 @@ set -eo pipefail
 # ----------------------------
 # 全局配置
 # ----------------------------
+readonly LOG_FILE="/var/log/system_maintenance.log"
 readonly SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
 readonly SWAP_SIZE="2048M"
 readonly DOCKER_NETWORK="mintcat"
