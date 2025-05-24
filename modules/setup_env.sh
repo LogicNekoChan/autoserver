@@ -4,11 +4,11 @@ set -eo pipefail
 # ----------------------------
 # 全局配置
 # ----------------------------
-readonly LOG_FILE="/var/log/system_maintenance.log"
-readonly SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
-readonly SWAP_SIZE="2048M"
-readonly DOCKER_NETWORK="mintcat"
-readonly DOCKER_SUBNET="172.20.0.0/16"
+LOG_FILE="/var/log/system_maintenance.log"
+SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
+SWAP_SIZE="2048M"
+DOCKER_NETWORK="mintcat"
+DOCKER_SUBNET="172.20.0.0/16"
 
 # ----------------------------
 # 日志管理系统（带轮转）
