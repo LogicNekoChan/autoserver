@@ -25,7 +25,7 @@ log() {
     echo "[${timestamp}] [${level}] ${message}" | tee -a "${LOG_FILE}"
     
     # 限制日志文件大小（最大10MB）
-    if [ $(stat -c%s "${LOG_FILE}") -gt 10485760 ]; then
+    if [ $(stat -c%s "${LOG_FILE}" 2>/dev/null) -gt 10485760 ]; then
         rotate_log="${LOG_FILE}.$(date +%Y%m%d%H%M%S)"
         mv "${LOG_FILE}" "${rotate_log}"
         log "INFO" "日志文件已轮转: ${rotate_log}"
@@ -55,7 +55,7 @@ safe_exec() {
 detect_os() {
     if [ -f /etc/os-release ]; then
         source /etc/os-release
-        echo "${ID}":
+        echo "${ID}"
     else
         log "ERROR" "无法检测操作系统"
         return 1
@@ -71,7 +71,7 @@ configure_ssh() {
     log "INFO" "开始配置SSH安全设置"
 
     # 备份原配置
-    safe_exec cp "${sshd_config}" "${sshd_config}.bak" || return 1
+    safe_exec "cp ${sshd_config} ${sshd_config}.bak" || return 1
 
     # 修改配置参数
     declare -A ssh_params=(
@@ -98,13 +98,13 @@ configure_ssh() {
     fi
 
     safe_exec "systemctl restart sshd"
-    log "INFO" "SSH安全配置完成，新端口：${SSH_PORT}"
+    log "INFO" "SSH安全配置完成"
 }
 
 # ----------------------------
 # 系统优化配置
 # ----------------------------
-optimizes_system() {
+optimize_system() {
     local os_type=$(detect_os)
 
     # 公共优化
@@ -114,7 +114,7 @@ optimizes_system() {
 
     case "${os_type}" in
         ubuntu|debian)
-            safe_exec "apt-get -y update && apt-get -y install curl jq vim neofetch"
+            safe_exec "apt-get update && apt-get install -y curl jq vim neofetch"
             safe_exec "sysctl -p /etc/sysctl.conf"
             ;;
         centos|rhel)
@@ -142,9 +142,9 @@ enable_bbr() {
         ["net.ipv4.tcp_congestion_control"]="bbr"
     )
 
-    for key in "${!bbrr_params[@]}"; do
+    for key in "${!bbr_params[@]}"; do
         if ! grep -q "^${key}" "${sysctl_conf}"; then
-            echo "${key} = ${bbrr_params[$key]}" | safe_exec "tee -a ${sysctl_conf}"
+            echo "${key} = ${bbr_params[$key]}" | safe_exec "tee -a ${sysctl_conf}"
         fi
     done
 
@@ -205,7 +205,7 @@ setup_docker() {
         safe_exec "curl -L https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose"
         safe_exec "chmod +x /usr/local/bin/docker-compose"
     else
-        log "INFO" "Docker Compe已安装，跳过安装步骤"
+        log "INFO" "Docker Compose已安装，跳过安装步骤"
     fi
 
     # 创建专用网络
@@ -317,3 +317,5 @@ main() {
     show_menu
 }
 
+# 启动主程序
+main
