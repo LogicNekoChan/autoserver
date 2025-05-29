@@ -210,7 +210,10 @@ setup_docker() {
 
     # 创建专用网络
     if ! docker network inspect "${DOCKER_NETWORK}" &>/dev/null; then
+        log "INFO" "创建Docker网络: ${DOCKER_NETWORK}"
         safe_exec "docker network create --driver bridge --subnet ${DOCKER_SUBNET} ${DOCKER_NETWORK}"
+    else
+        log "INFO" "Docker网络 ${DOCKER_NETWORK} 已存在，跳过创建步骤"
     fi
 
     log "INFO" "Docker版本: $(docker --version)"
