@@ -269,18 +269,31 @@ delete_system() {
     fi
 }
 
+# ----------------------------
+# 部署容器
+# ----------------------------
 deploy_containers() {
     echo "[INFO] 正在从 URL 下载 docker-compose 文件: $DOCKER_COMPOSE_URL"
     local compose_file="/tmp/docker-compose.yml"
     
+    # 下载文件
     if ! curl -fsSL "$DOCKER_COMPOSE_URL" -o "$compose_file"; then
         handle_error "下载 docker-compose 文件失败"
+    fi
+
+    # 确保文件下载成功
+    if [ ! -f "$compose_file" ]; then
+        handle_error "文件未成功下载到: $compose_file"
     fi
 
     echo "[INFO] 文件已安全保存到: $compose_file"
     
     # 解析 docker-compose 文件中的服务
-    local services=($(docker-compose -f "$compose_file" config --services))
+    local services=($(docker-compose -f "$compose_file" config --services 2>/dev/null))
+    if [ $? -ne 0 ]; then
+        handle_error "解析 docker-compose 文件失败，可能是文件格式错误"
+    fi
+
     if [ ${#services[@]} -eq 0 ]; then
         handle_error "未找到任何服务定义"
     fi
@@ -308,7 +321,6 @@ deploy_containers() {
         handle_error "服务 $selected_service 部署失败"
     fi
 }
-
 
 # ----------------------------
 # 主界面
@@ -350,4 +362,3 @@ main() {
 
 # 启动主程序
 main
-            
