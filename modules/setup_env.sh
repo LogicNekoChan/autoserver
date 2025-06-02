@@ -7,8 +7,6 @@ set -eo pipefail
 LOG_FILE="/var/log/system_maintenance.log"
 SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMJmS95vKboqxjPxyz+fOhn2tNsrUkgWY1VSYvF8aUyA"
 SWAP_SIZE="2048M"
-DOCKER_NETWORK="mintcat"
-DOCKER_SUBNET="172.21.0.0/16"
 
 # ----------------------------
 # 日志管理系统（带轮转）
@@ -206,14 +204,6 @@ setup_docker() {
         safe_exec "chmod +x /usr/local/bin/docker-compose"
     else
         log "INFO" "Docker Compose已安装，跳过安装步骤"
-    fi
-
-    # 创建专用网络
-    if ! docker network inspect "${DOCKER_NETWORK}" &>/dev/null; then
-        log "INFO" "创建Docker网络: ${DOCKER_NETWORK}"
-        safe_exec "docker network create --driver bridge --subnet ${DOCKER_SUBNET} ${DOCKER_NETWORK}"
-    else
-        log "INFO" "Docker网络 ${DOCKER_NETWORK} 已存在，跳过创建步骤"
     fi
 
     log "INFO" "Docker版本: $(docker --version)"
