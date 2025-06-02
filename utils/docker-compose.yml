@@ -1,16 +1,19 @@
 version: '3.8'
 
 services:
-  # 基础设施服务
+  # Infrastructure Services
   mysql:
     image: mysql:8.0
     container_name: mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: admin123
-      MYSQL_DATABASE: alist
+      # !! IMPORTANT: For production, set these in a .env file and ensure strong passwords.
+      # Example: MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: admin123 # Strongly recommend changing this default
+      MYSQL_DATABASE: alist,vaultwarden # Both databases are created
       MYSQL_USER: alist
-      MYSQL_PASSWORD: alist_password
+      MYSQL_PASSWORD: alist_password # Strongly recommend changing this default
+      MYSQL_INITDB_SKIP_TZINFO: "true" # Optional: Speeds up initialization
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -22,7 +25,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # 安全服务
+  # Security Service
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
@@ -32,13 +35,14 @@ services:
     environment:
       - WEBSOCKET_ENABLED=true
       - SIGNUPS_ALLOWED=true
-      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme} # 建议在 .env 文件中设置 BITWARDEN_ADMIN_TOKEN
+      # !! IMPORTANT: Set BITWARDEN_ADMIN_TOKEN and MYSQL_BITWARDEN_PASSWORD in your .env file
+      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme_admin_token} # Change 'changeme_admin_token' to a strong token
       - DATABASE_TYPE=mysql
-      - DATABASE_HOST=172.21.10.6
+      - DATABASE_HOST=mysql # Use service name for internal Docker network
       - DATABASE_PORT=3306
-      - DATABASE_NAME=vaultwarden # 确保MySQL中有这个数据库，或者MySQL服务会自动创建
-      - DATABASE_USERNAME=vaultwarden # 确保MySQL中有这个用户并授权
-      - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-password} # 建议在 .env 文件中设置 MYSQL_BITWARDEN_PASSWORD
+      - DATABASE_NAME=vaultwarden
+      - DATABASE_USERNAME=vaultwarden # This user will need to be manually created in MySQL or via another environment variable
+      - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-changeme_vaultwarden_db_password} # Change 'changeme_vaultwarden_db_password' to a strong password
     networks:
       mintcat:
         ipv4_address: 172.21.10.5
@@ -46,7 +50,7 @@ services:
       mysql:
         condition: service_healthy
 
-  # 网络管理
+  # Network Management
   nginx:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx
@@ -62,15 +66,15 @@ services:
       mintcat:
         ipv4_address: 172.21.10.7
 
-  # 容器管理
+  # Container Management
   portainer_ce:
-    image: portainer/portainer-ce:2.21.5 # 您可以考虑使用 latest 标签: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:2.21.5 # Consider using 'latest' or a specific stable version
     container_name: portainer_ce
     restart: unless-stopped
     ports:
-      - "8000:8000" # Portainer agent (如果在此实例上管理其他环境)
-      - "9443:9443" # Portainer UI HTTPS (推荐)
-      # - "9000:9000" # Portainer UI HTTP (如果不需要HTTPS，或者由反向代理处理HTTPS)
+      # - "8000:8000" # Portainer agent port (only needed if managing other environments)
+      - "9443:9443" # Portainer UI HTTPS (recommended)
+      # - "9000:9000" # Portainer UI HTTP (if not using HTTPS or handled by reverse proxy)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
@@ -78,53 +82,53 @@ services:
       mintcat:
         ipv4_address: 172.21.10.3
 
-  portainer_agent: # 除非您有特定的多节点集群需求，否则对于单机管理，Portainer CE 本身就足够了，不需要独立的 agent。
-                  # 如果这个 agent 是为了让上面的 Portainer CE 实例管理的，通常 Portainer CE 会连接到本地 docker.sock，不需要额外 agent。
-                  # 如果是为外部 Portainer 实例管理此主机，则此配置合理。
-    image: portainer/agent:2.21.5 # 您可以考虑使用 latest 标签: portainer/agent:latest
-    container_name: portainer_agent
-    restart: unless-stopped
-    ports:
-      - "9001:9001"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker/volumes:/var/lib/docker/volumes # 访问宿主机 Docker 卷
-    networks:
-      mintcat:
-        ipv4_address: 172.21.10.4
+  # portainer_agent: # This service is generally NOT needed for single-host Docker management.
+  #   # Only include if you have an external Portainer instance managing this host
+  #   # or are setting up a multi-node cluster.
+  #   image: portainer/agent:2.21.5
+  #   container_name: portainer_agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9001:9001"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - /var/lib/docker/volumes:/var/lib/docker/volumes
+  #   networks:
+  #     mintcat:
+  #       ipv4_address: 172.21.10.4
 
-  # 运维工具
+  # Operations Tools
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --cleanup --schedule "0 3 * * *" # 每天凌晨3点检查更新
+    command: --cleanup --schedule "0 3 * * *" # Daily check at 3 AM and cleanup
     restart: unless-stopped
     networks:
       mintcat:
         ipv4_address: 172.21.10.9
 
-  # 开发工具
+  # Development Tools
   phpmyadmin:
     image: phpmyadmin:latest
     container_name: phpmyadmin
     restart: unless-stopped
     environment:
-      PMA_HOST: mysql # 使用服务名连接到MySQL
+      PMA_HOST: mysql # Connects to the mysql service by its name
       PMA_PORT: 3306
       UPLOAD_LIMIT: 1G
-      # MYSQL_ROOT_PASSWORD: admin123 # 如果需要允许root登录，可以设置这个
+      # MYSQL_ROOT_PASSWORD: admin123 # Uncomment and set if you want to allow root login via phpMyAdmin
     depends_on:
       mysql:
         condition: service_healthy
     networks:
       mintcat:
         ipv4_address: 172.21.10.1
-    # ports: # 除非您想直接从主机访问 phpMyAdmin，否则不需要映射端口，可以通过Nginx反代
-    #   - "8080:80" # 示例端口
+    # ports: # Access phpMyAdmin via Nginx Proxy Manager, so direct port mapping is often not needed.
+    #   - "8080:80"
 
-  # 网络服务
+  # Network Services
   tor:
     image: dockurr/tor:latest
     container_name: tor
@@ -136,24 +140,24 @@ services:
       mintcat:
         ipv4_address: 172.21.10.2
     stop_grace_period: 1m
-    # ports: # Tor 通常作为SOCKS代理，如果需要直接暴露，请谨慎配置
-    #   - "9050:9050" # SOCKS proxy port
+    # ports: # Tor typically acts as a SOCKS proxy. Expose with caution if needed externally.
+    #   - "9050:9050"
 
-  # 代理服务
+  # Proxy Service
   xui:
-    image: enwaiax/x-ui:alpha-zh # 注意 alpha 版本可能不稳定
+    image: enwaiax/x-ui:alpha-zh # Note: 'alpha' versions can be unstable. Consider stable alternatives.
     container_name: xui
     volumes:
       - xui_db:/etc/x-ui
-      - xui_cert:/root/cert # 证书路径
+      - xui_cert:/root/cert # Path for certificates
     restart: unless-stopped
     networks:
       mintcat:
         ipv4_address: 172.21.10.8
-    # ports: # 根据 x-ui 的需要映射端口，通常由Nginx Proxy Manager处理
-    #   - "54321:54321" # 示例x-ui面板端口
+    # ports: # x-ui panel port. Usually handled by Nginx Proxy Manager.
+    #   - "54321:54321"
 
-  # 文件管理服务
+  # File Management Service
   alist:
     image: xhofe/alist:latest
     container_name: alist
@@ -165,12 +169,12 @@ services:
       - PGID=0
       - UMASK=022
       - DB_TYPE=mysql
-      - DB_HOST=mysql # 使用服务名连接到MySQL
+      - DB_HOST=mysql # Connects to the mysql service by its name
       - DB_PORT=3306
-      - DB_USER=alist # 和MySQL服务中定义的一致
-      - DB_PASSWORD=alist_password # 和MySQL服务中定义的一致
-      - DB_NAME=alist # 和MySQL服务中定义的一致
-    ports: # Alist 的访问端口
+      - DB_USER=alist
+      - DB_PASSWORD=alist_password # Matches the password set in mysql service
+      - DB_NAME=alist # Matches the database name set in mysql service
+    ports: # Alist's access port. Can be exposed directly or via Nginx Proxy Manager.
       - "5244:5244"
     networks:
       mintcat:
@@ -207,4 +211,4 @@ networks:
     ipam:
       config:
         - subnet: 172.21.10.0/24
-        # gateway: 172.21.10.1 # 可以选择性地指定网关，如果未指定，Docker会自动选择一个
+        # gateway: 172.21.10.1 # Docker automatically assigns a gateway for custom bridge networks.
