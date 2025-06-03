@@ -121,7 +121,7 @@ services:
       # MYSQL_ROOT_PASSWORD: admin123 # Uncomment and set if you want to allow root login via phpMyAdmin
     networks:
       mintcat:
-        ipv4_address: 172.21.10.1
+        ipv4_address: 172.21.10.11
     # ports: # Access phpMyAdmin via Nginx Proxy Manager, so direct port mapping is often not needed.
     #   - "8080:80"
 
