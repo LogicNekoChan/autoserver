@@ -130,6 +130,8 @@ services:
     volumes:
       - tor_config:/etc/tor
       - tor_data:/var/lib/tor
+    ports:
+      - "80:80"
     networks:
       mintcat:
         ipv4_address: 172.21.10.2
