@@ -10,9 +10,6 @@ services:
       # !! IMPORTANT: For production, set these in a .env file and ensure strong passwords.
       # Example: MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       MYSQL_ROOT_PASSWORD: admin123 # Strongly recommend changing this default
-      MYSQL_DATABASE: alist,vaultwarden # Both databases are created
-      MYSQL_USER: alist
-      MYSQL_PASSWORD: alist_password # Strongly recommend changing this default
       MYSQL_INITDB_SKIP_TZINFO: "true" # Optional: Speeds up initialization
     volumes:
       - mysql_data:/var/lib/mysql
