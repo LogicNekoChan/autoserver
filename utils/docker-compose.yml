@@ -79,21 +79,6 @@ services:
       mintcat:
         ipv4_address: 172.21.10.3
 
-  # portainer_agent: # This service is generally NOT needed for single-host Docker management.
-  #   # Only include if you have an external Portainer instance managing this host
-  #   # or are setting up a multi-node cluster.
-  #   image: portainer/agent:2.21.5
-  #   container_name: portainer_agent
-  #   restart: unless-stopped
-  #   ports:
-  #     - "9001:9001"
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #     - /var/lib/docker/volumes:/var/lib/docker/volumes
-  #   networks:
-  #     mintcat:
-  #       ipv4_address: 172.21.10.4
-
   # Operations Tools
   watchtower:
     image: containrrr/watchtower:latest
@@ -131,7 +116,7 @@ services:
       - tor_config:/etc/tor
       - tor_data:/var/lib/tor
     ports:
-      - "80:80"
+      - "80:80" # Tor typically acts as a SOCKS proxy. Expose with caution if needed externally.
     networks:
       mintcat:
         ipv4_address: 172.21.10.2
@@ -179,6 +164,36 @@ services:
       mysql:
         condition: service_healthy
 
+  # DNS and Ad-blocking Service
+  adguardhome:
+    image: adguard/adguardhome
+    container_name: adguardhome
+    restart: unless-stopped
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+    ports:
+      # DNS ports
+      - "53:53/tcp"
+      - "53:53/udp"
+      # DHCP ports (only if you intend to use AdGuard Home as your DHCP server)
+      - "67:67/udp"
+      - "68:68/udp"
+      # Web interface and secure DNS
+      - "80:80" # Web interface (initial setup)
+      - "443:443" # Web interface (HTTPS) and DNS-over-HTTPS
+      - "443:443/udp" # DNS-over-QUIC
+      - "3000:3000" # AdGuard Home UI port
+      - "853:853/tcp" # DNS-over-TLS
+      - "784:784/udp" # DNS-over-QUIC (alternative)
+      - "853:853/udp" # DNS-over-HTTPS (alternative)
+      - "8853:8853/udp" # DNSCrypt
+      - "5443:5443/tcp" # DNS-over-HTTPS (alternative)
+      - "5443:5443/udp" # DNS-over-QUIC (alternative)
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.12 # Assign a new, unique IP
+
 volumes:
   mysql_data:
     driver: local
@@ -199,6 +214,10 @@ volumes:
   xui_cert:
     driver: local
   alist_data:
+    driver: local
+  adguard_work: # New volume for AdGuard Home work directory
+    driver: local
+  adguard_conf: # New volume for AdGuard Home configuration
     driver: local
 
 networks:
