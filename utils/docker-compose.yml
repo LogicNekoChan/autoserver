@@ -34,12 +34,7 @@ services:
       - SIGNUPS_ALLOWED=true
       # !! IMPORTANT: Set BITWARDEN_ADMIN_TOKEN and MYSQL_BITWARDEN_PASSWORD in your .env file
       - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme_admin_token} # Change 'changeme_admin_token' to a strong token
-      - DATABASE_TYPE=mysql
-      - DATABASE_HOST=mysql # Use service name for internal Docker network
-      - DATABASE_PORT=3306
-      - DATABASE_NAME=vaultwarden
-      - DATABASE_USERNAME=vaultwarden # This user will need to be manually created in MySQL or via another environment variable
-      - DATABASE_PASSWORD=${MYSQL_BITWARDEN_PASSWORD:-changeme_vaultwarden_db_password} # Change 'changeme_vaultwarden_db_password' to a strong password
+      - DATABASE_URL=mysql://<数据库用户名>:<数据库用户密码>@<数据库公网地址>:<数据库端口>/<数据库名称>
     networks:
       mintcat:
         ipv4_address: 172.21.10.5
