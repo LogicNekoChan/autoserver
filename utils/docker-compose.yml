@@ -172,7 +172,7 @@ services:
         ipv4_address: 172.21.10.4
         
   frequi:
-    image: freqtrade/frequi:latest
+    image: freqtradeorg/frequi
     container_name: frequi
     restart: unless-stopped
     depends_on:
