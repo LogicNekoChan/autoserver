@@ -170,7 +170,23 @@ services:
     networks:
       mintcat:
         ipv4_address: 172.21.10.4
-
+        
+  frequi:
+    image: freqtrade/frequi:latest
+    container_name: frequi
+    restart: unless-stopped
+    depends_on:
+      - freqtrade
+    ports:
+      - "8088:8080"  # 外部访问端口 → 内部服务端口
+    environment:
+      - FREQTRADE_URI=http://172.21.10.4:8080  # 指向 freqtrade RPC API 地址
+      - USERNAME=admin
+      - PASSWORD=changeme123  # 请修改为强密码
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.13
+        
 volumes:
   mysql_data:
     driver: local
