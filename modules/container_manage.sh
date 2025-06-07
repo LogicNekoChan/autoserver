@@ -276,6 +276,12 @@ deploy_containers() {
     echo "[INFO] 正在从 URL 下载 docker-compose 文件: $DOCKER_COMPOSE_URL"
     local compose_file="/tmp/docker-compose.yml"
     
+    # 如果文件存在，先删除旧文件
+    if [ -f "$compose_file" ]; then
+        echo "[INFO] 检测到旧文件，正在删除: $compose_file"
+        rm -f "$compose_file"
+    fi
+
     # 下载文件
     if ! curl -fsSL "$DOCKER_COMPOSE_URL" -o "$compose_file"; then
         handle_error "下载 docker-compose 文件失败"
