@@ -1,16 +1,15 @@
 version: '3.8'
 
 services:
-  # Infrastructure Services
+  # 你的原有服务，略……
+
   mysql:
     image: mysql:8.0
     container_name: mysql
     restart: unless-stopped
     environment:
-      # !! IMPORTANT: For production, set these in a .env file and ensure strong passwords.
-      # Example: MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      MYSQL_ROOT_PASSWORD: admin123 # Strongly recommend changing this default
-      MYSQL_INITDB_SKIP_TZINFO: "true" # Optional: Speeds up initialization
+      MYSQL_ROOT_PASSWORD: admin123
+      MYSQL_INITDB_SKIP_TZINFO: "true"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -22,7 +21,6 @@ services:
       timeout: 5s
       retries: 3
 
-  # Security Service
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
@@ -32,8 +30,7 @@ services:
     environment:
       - WEBSOCKET_ENABLED=true
       - SIGNUPS_ALLOWED=true
-      # !! IMPORTANT: Set BITWARDEN_ADMIN_TOKEN and MYSQL_BITWARDEN_PASSWORD in your .env file
-      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme_admin_token} # Change 'changeme_admin_token' to a strong token
+      - ADMIN_TOKEN=${BITWARDEN_ADMIN_TOKEN:-changeme_admin_token}
       - DATABASE_URL=mysql://<数据库用户名>:<数据库用户密码>@<数据库公网地址>:<数据库端口>/<数据库名称>
     networks:
       mintcat:
@@ -42,14 +39,13 @@ services:
       mysql:
         condition: service_healthy
 
-  # Network Management
   nginx:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx
     restart: unless-stopped
     ports:
       - "80:80"
-      - "81:81" # Nginx Proxy Manager admin panel
+      - "81:81"
       - "443:443"
     volumes:
       - nginx_data:/data
@@ -58,15 +54,12 @@ services:
       mintcat:
         ipv4_address: 172.21.10.7
 
-  # Container Management
   portainer_ce:
-    image: portainer/portainer-ce:2.21.5 # Consider using 'latest' or a specific stable version
+    image: portainer/portainer-ce:2.21.5
     container_name: portainer_ce
     restart: unless-stopped
     ports:
-      # - "8000:8000" # Portainer agent port (only needed if managing other environments)
-      - "9443:9443" # Portainer UI HTTPS (recommended)
-      # - "9000:9000" # Portainer UI HTTP (if not using HTTPS or handled by reverse proxy)
+      - "9443:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
@@ -74,35 +67,29 @@ services:
       mintcat:
         ipv4_address: 172.21.10.3
 
-  # Operations Tools
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --cleanup --schedule "0 3 * * *" # Daily check at 3 AM and cleanup
+    command: --cleanup --schedule "0 3 * * *"
     restart: unless-stopped
     networks:
       mintcat:
         ipv4_address: 172.21.10.9
 
-  # Development Tools
   phpmyadmin:
     image: phpmyadmin:latest
     container_name: phpmyadmin
     restart: unless-stopped
     environment:
-      PMA_HOST: mysql # Connects to the mysql service by its name
+      PMA_HOST: mysql
       PMA_PORT: 3306
       UPLOAD_LIMIT: 1G
-      # MYSQL_ROOT_PASSWORD: admin123 # Uncomment and set if you want to allow root login via phpMyAdmin
     networks:
       mintcat:
         ipv4_address: 172.21.10.11
-    # ports: # Access phpMyAdmin via Nginx Proxy Manager, so direct port mapping is often not needed.
-    #   - "8080:80"
 
-  # Network Services
   tor:
     image: dockurr/tor:latest
     container_name: tor
@@ -114,24 +101,18 @@ services:
       mintcat:
         ipv4_address: 172.21.10.2
     stop_grace_period: 1m
-    # ports: # Tor typically acts as a SOCKS proxy. Expose with caution if needed externally.
-    #   - "9050:9050"
 
-  # Proxy Service
   xui:
-    image: enwaiax/x-ui:alpha-zh # Note: 'alpha' versions can be unstable. Consider stable alternatives.
+    image: enwaiax/x-ui:alpha-zh
     container_name: xui
     volumes:
       - xui_db:/etc/x-ui
-      - xui_cert:/root/cert # Path for certificates
+      - xui_cert:/root/cert
     restart: unless-stopped
     networks:
       mintcat:
         ipv4_address: 172.21.10.8
-    # ports: # x-ui panel port. Usually handled by Nginx Proxy Manager.
-    #   - "54321:54321"
 
-  # File Management Service
   alist:
     image: xhofe/alist:latest
     container_name: alist
@@ -143,12 +124,12 @@ services:
       - PGID=0
       - UMASK=022
       - DB_TYPE=mysql
-      - DB_HOST=mysql # Connects to the mysql service by its name
+      - DB_HOST=mysql
       - DB_PORT=3306
       - DB_USER=alist
-      - DB_PASSWORD=alist_password # Matches the password set in mysql service
-      - DB_NAME=alist # Matches the database name set in mysql service
-    ports: # Alist's access port. Can be exposed directly or via Nginx Proxy Manager.
+      - DB_PASSWORD=alist_password
+      - DB_NAME=alist
+    ports:
       - "5244:5244"
     networks:
       mintcat:
@@ -157,7 +138,6 @@ services:
       mysql:
         condition: service_healthy
 
-  # DNS and Ad-blocking Service
   adguardhome:
     image: adguard/adguardhome
     container_name: adguardhome
@@ -166,10 +146,30 @@ services:
       - adguard_work:/opt/adguardhome/work
       - adguard_conf:/opt/adguardhome/conf
     ports:
-      - "3000:3000" # AdGuard Home UI port
+      - "3000:3000"
     networks:
       mintcat:
-        ipv4_address: 172.21.10.12 # Assign a new, unique IP
+        ipv4_address: 172.21.10.12
+
+  # freqtrade服务配置
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable
+    container_name: freqtrade_bot
+    restart: unless-stopped
+    volumes:
+      - freqtrade_user_data:/freqtrade/user_data            # 运行数据（数据库、日志等）
+      - freqtrade_config:/freqtrade/config.json:ro          # 配置文件（命名卷，建议初始化）
+      - freqtrade_strategies:/freqtrade/strategies:ro       # 策略代码目录（命名卷，建议初始化）
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: >
+      trade
+      --config /freqtrade/config.json
+      --strategy DualTrendGridStrategy
+      --datadir /freqtrade/user_data/data
+    networks:
+      mintcat:
+        ipv4_address: 172.21.10.4
 
 volumes:
   mysql_data:
@@ -192,15 +192,19 @@ volumes:
     driver: local
   alist_data:
     driver: local
-  adguard_work: # New volume for AdGuard Home work directory
+  adguard_work:
     driver: local
-  adguard_conf: # New volume for AdGuard Home configuration
+  adguard_conf:
     driver: local
-
+  freqtrade_user_data:
+    driver: local
+  freqtrade_config:
+    driver: local
+  freqtrade_strategies:
+    driver: local
 networks:
   mintcat:
     driver: bridge
     ipam:
       config:
         - subnet: 172.21.10.0/24
-        # gateway: 172.21.10.1 # Docker automatically assigns a gateway for custom bridge networks.
