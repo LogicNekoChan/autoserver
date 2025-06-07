@@ -166,6 +166,7 @@ services:
       --config /freqtrade/config.json
       --strategy DualTrendGridStrategy
       --datadir /freqtrade/user_data/data
+      --rpc  # 启用 RPC 接口
     networks:
       mintcat:
         ipv4_address: 172.21.10.4
