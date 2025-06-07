@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # 你的原有服务，略……
 
   mysql:
     image: mysql:8.0
