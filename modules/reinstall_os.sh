@@ -11,7 +11,7 @@ is_cn() {
     curl -s --retry 3 http://www.qualcomm.cn/cdn-cgi/trace | grep -q '^loc=CN'
 }
 
-#################### 2. 交互式选择 ####################
+#################### 2. 发行版列表 ####################
 declare -A MAP=(
     [anolis]="7|8|23"
     [opencloudos]="8|9|23"
@@ -37,21 +37,19 @@ declare -A MAP=(
     [netboot.xyz]=""
 )
 
+#################### 3. 交互式选择 ####################
 echo "======================================"
 echo "      交互式重装系统向导              "
 echo "======================================"
 
-# 发行版列表
+# 打印发行版列表（不用 column）
 echo "可选发行版："
-printf '%s\n' "${!MAP[@]}" | column
+printf '%s\n' "${!MAP[@]}" | sort | paste -sd'  ' | fold -s -w 80
 echo
 
 read -rp "请选择发行版名称: " DISTRO
 DISTRO=${DISTRO,,}
-[[ -z ${MAP[$DISTRO]} ]] && {
-    echo "不支持的发行版！"
-    exit 1
-}
+[[ -z ${MAP[$DISTRO]} ]] && { echo "不支持的发行版！"; exit 1; }
 
 # 版本号
 if [[ -n ${MAP[$DISTRO]} ]]; then
@@ -70,21 +68,21 @@ if [[ $DISTRO == "redhat" ]]; then
     done
 fi
 
-#################### 3. 默认配置 ####################
+#################### 4. 默认配置 ####################
 GITHUB_USER="LogicNekoChan"
 echo -n "自动获取 GitHub 用户 $GITHUB_USER 的 SSH 公钥 … "
 SSH_KEY=$(curl -fsSL "https://github.com/${GITHUB_USER}.keys" | head -n1)
 [[ -z $SSH_KEY ]] && { echo "失败"; exit 1; }
 echo "OK"
 
-#################### 4. 构造 reinstall.sh 参数 ####################
+#################### 5. 构造 reinstall.sh 参数 ####################
 BUILD_ARGS=("$DISTRO")
 [[ -n $RELEASE ]] && BUILD_ARGS+=("$RELEASE")
 BUILD_ARGS+=(--ssh-key "$SSH_KEY")
-BUILD_ARGS+=(--password "")   # 关闭密码登录
+BUILD_ARGS+=(--password "")
 [[ -n $REDHAT_IMG ]] && BUILD_ARGS+=(--img "$REDHAT_IMG")
 
-#################### 5. 下载并启动 ####################
+#################### 6. 下载并启动 ####################
 repo=$([ is_cn ] && echo "$CN_REPO" || echo "$GLOBAL_REPO")
 [[ ! -x reinstall.sh ]] && {
     curl -fsSL "$repo" -o reinstall.sh || wget -O reinstall.sh "$repo"
