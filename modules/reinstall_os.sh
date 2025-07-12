@@ -42,7 +42,6 @@ echo "======================================"
 echo "      交互式重装系统向导              "
 echo "======================================"
 
-# 打印发行版列表（不用 column）
 echo "可选发行版："
 printf '%s\n' "${!MAP[@]}" | sort | paste -sd'  ' | fold -s -w 80
 echo
@@ -79,11 +78,11 @@ echo "OK"
 BUILD_ARGS=("$DISTRO")
 [[ -n $RELEASE ]] && BUILD_ARGS+=("$RELEASE")
 BUILD_ARGS+=(--ssh-key "$SSH_KEY")
-BUILD_ARGS+=(--password "")
+BUILD_ARGS+=(--password "")          # 关闭默认密码
 [[ -n $REDHAT_IMG ]] && BUILD_ARGS+=(--img "$REDHAT_IMG")
 
 #################### 6. 下载并启动 ####################
-repo=$([ is_cn ] && echo "$CN_REPO" || echo "$GLOBAL_REPO")
+repo=$($is_cn && echo "$CN_REPO" || echo "$GLOBAL_REPO")
 [[ ! -x reinstall.sh ]] && {
     curl -fsSL "$repo" -o reinstall.sh || wget -O reinstall.sh "$repo"
     chmod +x reinstall.sh
