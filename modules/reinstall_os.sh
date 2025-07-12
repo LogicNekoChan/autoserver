@@ -78,7 +78,6 @@ echo "OK"
 BUILD_ARGS=("$DISTRO")
 [[ -n $RELEASE ]] && BUILD_ARGS+=("$RELEASE")
 BUILD_ARGS+=(--ssh-key "$SSH_KEY")
-BUILD_ARGS+=(--password "")          # 关闭默认密码
 [[ -n $REDHAT_IMG ]] && BUILD_ARGS+=(--img "$REDHAT_IMG")
 
 #################### 6. 下载并启动 ####################
