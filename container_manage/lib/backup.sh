@@ -3,75 +3,63 @@
 # backup.sh  ——  容器备份模块（零依赖，独立可运行）
 # ------------------------------------------------------------------
 set -euo pipefail
+IFS=$'\n\t'
 
-# 若尚未定义，则给出默认值（独立运行时也能工作）
+# 环境变量可覆盖
 BACKUP_DIR="${BACKUP_DIR:-/root/backup}"
 LOG_FILE="${LOG_FILE:-/root/autoserver.log}"
 
-# 简单的日志函数（避免依赖外部 logger）
-log() {
-    local msg="$1"
-    echo "$(date '+%F %T') - $msg" | tee -a "$LOG_FILE" >/dev/null
-}
+log()  { printf '%s - %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE" >/dev/null; }
+die()  { log "[ERROR] $*"; printf '[!] %s\n' "$*" >&2; exit 1; }
 
-# 通用错误处理
-die() { log "[ERROR] $*"; echo "[!] $*" >&2; exit 1; }
-
-# ----------------------------------------------
-# 备份指定容器
-# ----------------------------------------------
+# -------------------------------------------------
+# 主函数
+# -------------------------------------------------
 backup_system() {
-    local running_containers=($(docker ps --format '{{.Names}}'))
-    [[ ${#running_containers[@]} -eq 0 ]] && die "当前没有运行中的容器"
+    local running=($(docker ps --format '{{.Names}}'))
+    (( ${#running[@]} )) || die "当前没有运行中的容器"
 
-    # ---------- 选择容器 ----------
-    echo "选择要备份的容器："
-    local idx
-    for idx in "${!running_containers[@]}"; do
-        printf "%3d) %s\n" $((idx+1)) "${running_containers[idx]}"
+    echo "===== 运行中的容器 ====="
+    select container in "${running[@]}"; do
+        [[ -n $container ]] && break
     done
 
-    local choice
-    read -rp "请输入编号 [1-${#running_containers[@]}]: " choice
-    [[ "$choice" =~ ^[0-9]+$ ]] \
-        && (( choice >= 1 && choice <= ${#running_containers[@]} )) \
-        || die "无效编号"
-    local container="${running_containers[$((choice-1))]}"
+    # 仅处理 bind 挂载
+    local mounts=($(docker inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}:{{.Destination}}{{end}}{{end}}' "$container"))
+    (( ${#mounts[@]} )) || die "容器 $container 没有 bind 挂载，无需备份"
 
-    # ---------- 获取挂载卷 ----------
-    # 格式：每行一个 源路径:容器内路径
-    mapfile -t mounts < <(docker inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}:{{.Destination}}{{printf "\n"}}{{end}}{{end}}' "$container")
-    [[ ${#mounts[@]} -eq 0 ]] && die "容器 $container 没有绑定挂载卷，无需备份"
+    local ts="${container}_$(date +%Y%m%d-%H%M%S)"
+    local dest="$BACKUP_DIR/$ts"
+    mkdir -p "$dest" || die "无法创建目录 $dest"
 
-    # ---------- 创建备份目录 ----------
-    local ts
-    ts="$(date +%Y%m%d-%H%M%S)"
-    local backup_path="${BACKUP_DIR}/${container}_${ts}"
-    mkdir -p "$backup_path" || die "无法创建备份目录 $backup_path"
-    log "开始备份容器 $container → $backup_path"
+    log "开始备份 $container → $dest"
 
-    # ---------- 开始打包 ----------
-    local total=${#mounts[@]} count=0
+    local ok=0 fail=0
     for m in "${mounts[@]}"; do
-        local src="${m%%:*}"          # 宿主机路径
-        local dst="${m##*:}"          # 容器内路径
-        local archive="${backup_path}/$(basename "$dst").tar.gz"
+        local src="${m%%:*}"
+        local dst="${m##*:}"
+        local arc="$dest/$(basename "$dst").tar.gz"
 
-        log "[$((++count))/$total] 打包 $src → ${archive##*/}"
-        tar -czf "$archive" -C "$(dirname "$src")" "$(basename "$src")" \
-            || die "打包失败：$src"
+        printf '  [%2d/%d] %s ... ' $((++ok+fail)) ${#mounts[@]}
+        if tar -czf "$arc" -C "$(dirname "$src")" "$(basename "$src")" 2>/dev/null; then
+            echo -e '\e[32mOK\e[0m'
+            ((ok++))
+        else
+            echo -e '\e[31mFAIL\e[0m'
+            log "打包失败：$src"
+            ((fail++))
+        fi
     done
 
-    log "备份完成：$backup_path"
-    echo -e "\n[√] 备份成功，路径：$backup_path"
+    log "备份完成：$dest （成功 $ok / 失败 $fail）"
+    echo -e "\n[√] 结果保存在：$dest"
 }
 
 # -------------------------------------------------
-# 如果直接执行本脚本（而非被 source），则自动调用
+# 入口
 # -------------------------------------------------
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    [[ "$(id -u)" -eq 0 ]] || die "请使用 root 运行"
-    command -v docker &>/dev/null || die "请先安装并启动 Docker"
-    [[ -d "$BACKUP_DIR" ]] || mkdir -p "$BACKUP_DIR"
-    backup_system
-fi
+[[ "$(id -u)" -eq 0 ]] || die "请使用 root 运行"
+command -v docker >/dev/null || die "Docker 未安装或未启动"
+[[ -d "$BACKUP_DIR" ]] || mkdir -p "$BACKUP_DIR"
+
+backup_system
