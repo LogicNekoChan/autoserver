@@ -15,7 +15,7 @@ docker network ls | grep -q "$NET_NAME" || \
     "$NET_NAME"
 
 # 2) 启动 mysql 容器
-docker run d \
+docker run -d \
   --name "$CT_NAME" \
   --restart unless-stopped \
   --network "$NET_NAME" \
