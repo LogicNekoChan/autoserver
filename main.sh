@@ -16,7 +16,7 @@ function main_menu() {
     read -p "请选择操作: " choice
     case "$choice" in
         1) source "$(dirname "$0")/modules/setup_env.sh" ;;
-        2) source "$(dirname "$0")/modules/container_manage.sh" ;;
+        2) source "$(dirname "$0")/container_manage/main.sh" ;;
         3) source "$(dirname "$0")/modules/crontab_manage.sh" ;;
         4) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
         0) exit 0 ;;
