@@ -1,21 +1,9 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-LOG_FILE="${LOG_FILE:-/root/autoserver.log}"
-
-log() {
-    echo "$(date '+%F %T') - $1" | tee -a "$LOG_FILE" >/dev/null
-}
-die() { log "[ERROR] $1"; echo "[!] $1" >&2; exit 1; }
-
-# 停止并删除容器
 graceful_stop() {
     local cid=$1
     log "停止容器: $cid"
     docker stop "$cid" >/dev/null 2>&1 || docker kill "$cid" >/dev/null || die "无法停止 $cid"
 }
 
-# 清理 bind mount 目录
 safe_clean_mounts() {
     local cid=$1
     local mounts
@@ -27,7 +15,16 @@ safe_clean_mounts() {
     done
 }
 
-# 主流程
+delete_named_volumes() {
+    local cid=$1
+    local volumes
+    mapfile -t volumes < <(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$cid")
+    for v in "${volumes[@]}"; do
+        [[ -n $v ]] || continue
+        docker volume rm "$v" 2>/dev/null && log "已删除卷: $v" || log "卷 $v 仍被占用，跳过"
+    done
+}
+
 delete_system() {
     local containers=($(docker ps -a --format '{{.Names}}'))
     [[ ${#containers[@]} -eq 0 ]] && die "没有可删除的容器"
@@ -47,12 +44,6 @@ delete_system() {
 
     graceful_stop "$target"
     safe_clean_mounts "$target"
+    delete_named_volumes "$target"
     docker rm -f "$target" >/dev/null && log "已删除容器: $target" && echo -e "\n[√] 删除成功"
-}
-
-# 直接执行入口
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] && {
-    [[ $(id -u) -eq 0 ]] || die "请使用 root 运行"
-    command -v docker &>/dev/null || die "请先安装并启动 Docker"
-    delete_system
 }
