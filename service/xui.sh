@@ -9,8 +9,6 @@ SUBNET="172.21.10.0/24"
 IP="172.21.10.8"
 CT_NAME="xui"
 IMG="enwaiax/x-ui:alpha-zh"
-
-# 卷名
 VOL_DB="xui_db"
 VOL_CERT="xui_cert"
 
@@ -24,7 +22,7 @@ docker network ls | grep -q "$NET_NAME" || \
     "$NET_NAME"
 
 ##############################################################################
-# 2) 清理旧容器（如存在）并启动新容器
+# 2) 清理旧容器（如果存在）并启动新容器
 ##############################################################################
 docker rm -f "$CT_NAME" >/dev/null 2>&1 || true
 
@@ -38,16 +36,17 @@ docker run -d \
   "$IMG"
 
 ##############################################################################
-# 3) 等待 xui 启动完成（简单 HTTP 判定）
+# 3) 等待 x-ui Web UI 就绪
 ##############################################################################
-echo "[INFO] 等待 xui 启动 ..."
+echo "[INFO] 等待 x-ui 启动 ..."
 for i in {1..30}; do
-  if docker exec "$CT_NAME" sh -c 'curl -s -o /dev/null -w "%{http_code}" http://localhost:54321 | grep -q "200"'; then
-    echo "[√] xui 已就绪！访问面板：http://${IP}:54321"
+  if docker exec "$CT_NAME" sh -c 'curl -s -o /dev/null -w "%{http_code}" http://localhost:54321 | grep -q "200\|302\|303"'; then
+    echo "[√] x-ui 已就绪！"
+    echo "访问面板：http://${IP}:54321"
     exit 0
   fi
   sleep 3
 done
 
-echo "[!] xui 启动超时"
+echo "[!] x-ui 启动超时"
 exit 1
