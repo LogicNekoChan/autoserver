@@ -30,7 +30,7 @@ docker run -d \
   --restart unless-stopped \
   --network "$NET_NAME" \
   --ip "$IP" \
-  -p 9443:9443 \
+  -p 9000:9000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$VOL":/data \
   "$IMG"
