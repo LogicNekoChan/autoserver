@@ -7,7 +7,7 @@ set -e
 NET_NAME="mintcat"
 SUBNET="172.21.10.0/24"
 IP="172.21.10.8"
-CT_NAME="xui"
+CT_NAME="3xui"
 IMG="bigbugcc/3x-ui:latest"
 VOL_DB="xui_db"
 VOL_CERT="xui_cert"
