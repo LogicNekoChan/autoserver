@@ -8,7 +8,7 @@ NET_NAME="mintcat"
 SUBNET="172.21.10.0/24"
 IP="172.21.10.8"
 CT_NAME="xui"
-IMG="enwaiax/x-ui:alpha-zh"
+IMG="bigbugcc/3x-ui:latest"
 VOL_DB="xui_db"
 VOL_CERT="xui_cert"
 
@@ -40,7 +40,7 @@ docker run -d \
 ##############################################################################
 echo "[INFO] 等待 x-ui 启动 ..."
 for i in {1..30}; do
-  if docker exec "$CT_NAME" sh -c 'curl -s -o /dev/null -w "%{http_code}" http://localhost:54321 | grep -q "200\|302\|303"'; then
+  if docker exec "$CT_NAME" sh -c 'curl -s -o /dev/null -w "%{http_code}" http://localhost:2053 | grep -q "200\|302\|303"'; then
     echo "[√] x-ui 已就绪！"
     echo "访问面板：http://${IP}:54321"
     exit 0
