@@ -31,22 +31,18 @@ list_keys(){
 # 返回值 0 且向标准输出打印选中的 16 位 KeyID
 select_keys(){
   local prompt="$1"
-  # 用关联数组：keyid -> uid
-  local -A map
-  local line kid uid
-  while IFS= read -r line; do
-    case "$line" in
-      pub*) kid=${line%%:*}; kid=${kid##*:} ;;
-      uid*) uid=${line%%:*}; uid=${uid##*:}; map[$kid]=$uid ;;
-    esac
+  local -A map=()               # keyid -> uid
+  local kid uid
+  while IFS=':' read -r _ _ _ _ kid _ _ _ _ uid _; do
+    [[ $kid && $uid ]] && map[$kid]=$uid
   done < <(gpg --list-keys --keyid-format LONG --with-colons)
 
   ((${#map[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
 
   echo -e "${YELLOW}${prompt}${NC}"
   printf "%2s  %-35s  %s\n" "序号" "UID" "KeyID"
-  local -a kids=("${!map[@]}")             # 所有 KeyID
-  local i sel
+  local -a kids=("${!map[@]}")
+  local i
   for i in "${!kids[@]}"; do
     printf "%2d  %-35s  %s\n" $((i+1)) "${map[${kids[i]}]}" "${kids[i]}"
   done
