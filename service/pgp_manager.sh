@@ -109,7 +109,7 @@ while true; do
       ;;
     7)
       read -p "待解密的 .gpg 文件路径: " enc
-      [[ -f $enc" ]] || { echo -e "${RED}文件不存在${NC}"; continue; }
+      [[ -f $enc ]] || { echo -e "${RED}文件不存在${NC}"; continue; }
       # 默认输出名
       out="${enc%.gpg}"
       gpg --decrypt --output "$out" "$enc"
