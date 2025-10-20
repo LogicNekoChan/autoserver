@@ -11,6 +11,7 @@ function main_menu() {
     echo "2. 容器管理（部署/备份/恢复/删除）"
     echo "3. Crontab 任务管理"
     echo "4. 重装系统"
+    echo "5. 重装系统"
     echo "0. 退出"
     echo "============================================"
     read -p "请选择操作: " choice
@@ -19,6 +20,7 @@ function main_menu() {
         2) source "$(dirname "$0")/container_manage/main.sh" ;;
         3) source "$(dirname "$0")/modules/crontab_manage.sh" ;;
         4) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
+        5) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
     esac
