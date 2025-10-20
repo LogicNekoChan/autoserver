@@ -13,28 +13,29 @@ readonly RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' BLUE='\033[1;34
 ############ 辅助函数 ############
 list_keys(){
   echo -e "\n${BLUE}========== 本地公钥 ==========${NC}"
-  gpg --list-keys --keyid-format LONG --with-colons |
-  awk -F: '
-  $1=="pub" {pk=1; k=$5; e=$7; printf "\n公钥: %s 过期: %s\n",k,(e?e:"永不")}
-  $1=="uid" && pk {print "  UID: "$10}
-  $1=="sub" {pk=0}
-  '
+  gpg --list-keys --keyid-format LONG |
+  awk '/^pub/ { getline; print "\n公钥: " $2 " 过期: "($6?$6:"永不"); print "  UID: " $0 }'
   echo -e "\n${GREEN}========== 本地私钥 ==========${NC}"
-  gpg --list-secret-keys --keyid-format LONG --with-colons |
-  awk -F: '
-  $1=="sec" {sk=1; k=$5; e=$7; printf "\n*私钥*: %s 过期: %s\n",k,(e?e:"永不")}
-  $1=="uid" && sk {print "  UID: "$10}
-  $1=="ssb" {sk=0}
-  '
+  gpg --list-secret-keys --keyid-format LONG |
+  awk '/^sec/ { getline; print "\n*私钥*: " $2 " 过期: "($6?$6:"永不"); print "  UID: " $0 }'
 }
 
 # 返回值 0 且向标准输出打印选中的 16 位 KeyID
 select_keys(){
   local prompt="$1"
-  local -A map=()               # keyid -> uid
-  local kid uid
-  while IFS=':' read -r _ _ _ _ kid _ _ _ _ uid _; do
-    [[ $kid && $uid ]] && map[$kid]=$uid
+  # 用关联数组：keyid -> uid
+  local -A map
+  local line kid uid
+  while IFS= read -r line; do
+    case "$line" in
+      pub:*)
+        kid=$(echo "$line" | awk -F: '{print $5}')
+        # 下一行就是 uid
+        IFS= read -r line
+        uid=$(echo "$line" | awk -F: '{print $10}')
+        map[$kid]=$uid
+        ;;
+    esac
   done < <(gpg --list-keys --keyid-format LONG --with-colons)
 
   ((${#map[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
