@@ -7,15 +7,17 @@ R=$'\033[0;31m';G=$'\033[0;32m';Y=$'\033[1;33m';B=$'\033[1;34m';N=$'\033[0m'
 ########  公钥列表 -> 序号菜单  ########
 # 返回 0 且 stdout = KeyID；1 = 无钥
 pick_key(){
-  local line n=1 kid uid out IFS=$'\t'
+  local line n=1 uid kid out IFS=$'\t'
+  echo -e "${Y}=== 选择接收方公钥 ===${N}"
+  # 一行一个: 序号<tab>UID<tab>KeyID   （顺序别改）
   gpg --list-keys --keyid-format LONG --with-colons |
-  awk -F: '$1=="pub"{kid=$5} $1=="uid"{printf "%d\t%s\t%s\n",nr++,kid,$10}' nr=1 > /tmp/k$$
+  awk -F: '$1=="pub"{kid=$5} $1=="uid"{printf "%d\t%s\t%s\n",nr++,$10,kid}' nr=1 > /tmp/k$$
   [[ -s /tmp/k$$ ]] || { echo -e "${R}本地无公钥！${N}"; return 1; }
-  while read -r n kid uid; do
+  while read -r n uid kid; do          # 顺序对应：序号 UID KeyID
     printf "%2d  %-30s  %s\n" "$n" "$uid" "$kid"
   done </tmp/k$$
   read -p "序号: " idx
-  out=$(awk -F'\t' -v v="$idx" '$1==v{print $2}' /tmp/k$$)
+  out=$(awk -F'\t' -v v="$idx" '$1==v{print $3}' /tmp/k$$)   # $3 才是 KeyID
   rm -f /tmp/k$$
   [[ -n $out ]] && { echo "$out"; return 0; } ||
     { echo -e "${R}无效序号${N}"; return 1; }
