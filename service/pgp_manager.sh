@@ -23,28 +23,36 @@ list_keys(){
 # 返回值 0 且向标准输出打印选中的 16 位 KeyID
 select_keys(){
   local prompt="$1"
-  local map                       # 先普通 local
-  declare -A map                  # 再声明关联数组
-  local kid uid
-  while IFS=: read -r _ _ _ _ kid _ _ _ _ uid _; do
-    [[ $kid && $uid ]] && map[$kid]=$uid
+  # 用两个普通数组，老 Bash 也稳
+  local keyids=() uids=() line kid uid idx=1
+  while IFS= read -r line; do
+    case "$line" in
+      pub:*)
+        kid=$(awk -F: '{print $5}' <<<"$line")
+        # 立即读下一条 uid
+        IFS= read -r line
+        uid=$(awk -F: '{print $10}' <<<"$line")
+        keyids[idx]=$kid
+        uids[idx]=$uid
+        ((idx++))
+        ;;
+    esac
   done < <(gpg --list-keys --keyid-format LONG --with-colons)
 
-  ((${#map[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
+  ((${#keyids[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
 
   echo -e "${YELLOW}${prompt}${NC}"
   printf "%2s  %-35s  %s\n" "序号" "UID" "KeyID"
-  local -a kids=("${!map[@]}")
   local i
-  for i in "${!kids[@]}"; do
-    printf "%2d  %-35s  %s\n" $((i+1)) "${map[${kids[i]}]}" "${kids[i]}"
+  for i in $(seq 1 $((${#keyids[@]}))); do
+    printf "%2d  %-35s  %s\n" "$i" "${uids[i]}" "${keyids[i]}"
   done
 
   read -p "请选择序号（多个用逗号分隔）: " picks
-  local ok=1
+  local ok=1 p
   for p in ${picks//,/ }; do
-    if [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#kids[@]} ]]; then
-      echo "${kids[$((p-1))]}"
+    if [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#keyids[@]} ]]; then
+      echo "${keyids[$p]}"
     else
       echo -e "${RED}无效序号: $p${NC}" >&2
       ok=0
@@ -52,7 +60,6 @@ select_keys(){
   done
   return $ok
 }
-
 ############ 菜单 ############
 while true; do
   echo -e "\n${YELLOW}==== PGP 本地管理 ====${NC}"
