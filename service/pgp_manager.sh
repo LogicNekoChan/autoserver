@@ -23,19 +23,10 @@ list_keys(){
 # 返回值 0 且向标准输出打印选中的 16 位 KeyID
 select_keys(){
   local prompt="$1"
-  # 用关联数组：keyid -> uid
-  local -A map
-  local line kid uid
-  while IFS= read -r line; do
-    case "$line" in
-      pub:*)
-        kid=$(echo "$line" | awk -F: '{print $5}')
-        # 下一行就是 uid
-        IFS= read -r line
-        uid=$(echo "$line" | awk -F: '{print $10}')
-        map[$kid]=$uid
-        ;;
-    esac
+  local -A map                 # keyid -> uid
+  local kid uid
+  while IFS=: read -r _ _ _ _ kid _ _ _ _ uid _; do
+    [[ $kid && $uid ]] && map[$kid]=$uid
   done < <(gpg --list-keys --keyid-format LONG --with-colons)
 
   ((${#map[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
@@ -52,7 +43,7 @@ select_keys(){
   local ok=1
   for p in ${picks//,/ }; do
     if [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#kids[@]} ]]; then
-      echo "${kids[$((p-1))]}"
+      echo "${kids[$((p-1))]}"          # 只回传 16 位 KeyID
     else
       echo -e "${RED}无效序号: $p${NC}" >&2
       ok=0
