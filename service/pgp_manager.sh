@@ -23,7 +23,8 @@ list_keys(){
 # 返回值 0 且向标准输出打印选中的 16 位 KeyID
 select_keys(){
   local prompt="$1"
-  local -A map                 # keyid -> uid
+  local map                       # 先普通 local
+  declare -A map                  # 再声明关联数组
   local kid uid
   while IFS=: read -r _ _ _ _ kid _ _ _ _ uid _; do
     [[ $kid && $uid ]] && map[$kid]=$uid
@@ -43,7 +44,7 @@ select_keys(){
   local ok=1
   for p in ${picks//,/ }; do
     if [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#kids[@]} ]]; then
-      echo "${kids[$((p-1))]}"          # 只回传 16 位 KeyID
+      echo "${kids[$((p-1))]}"
     else
       echo -e "${RED}无效序号: $p${NC}" >&2
       ok=0
