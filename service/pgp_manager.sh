@@ -28,14 +28,30 @@ list_local_keys(){
 
 select_keys(){
   local prompt="$1" arr=() IFS=$'\n'
+  # 一次性读出所有 UID
   mapfile -t arr < <(gpg --list-keys --with-colons |awk -F: '$1=="uid"{print $10}')
-  if ((${#arr[@]}==0)); then echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; fi
+  if ((${#arr[@]}==0)); then
+    echo -e "${RED}本地没有公钥，无法加密！${NC}"
+    return 1
+  fi
+
   echo -e "${YELLOW}${prompt}${NC}"
-  for i in "${!arr[@]}"; do printf "%2d) %s\n" $((i+1)) "${arr[i]}"; done
+  # 这里把序号和 UID 一起打印出来
+  for i in "${!arr[@]}"; do
+    printf "%2d) %s\n" $((i+1)) "${arr[i]}"
+  done
+
   read -p "请选择序号（多个用逗号分隔）: " picks
+  # 下面保持你原来的合法性检查与 KeyID 提取逻辑不变
   for p in ${picks//,/ }; do
-    [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#arr[@]} ]] || { echo -e "${RED}无效序号: $p${NC}"; return 1; }
-    gpg --list-keys --with-colons |awk -F: -v n=$p '$1=="uid"{i++} i==n{print $10; exit}' |xargs gpg --list-keys --with-colons |awk -F: '$1=="pub"{print $5; exit}'
+    [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#arr[@]} ]] || {
+      echo -e "${RED}无效序号: $p${NC}"
+      return 1
+    }
+    gpg --list-keys --with-colons |
+      awk -F: -v n=$p '$1=="uid"{i++} i==n{print $10; exit}' |
+      xargs gpg --list-keys --with-colons |
+      awk -F: '$1=="pub"{print $5; exit}'
   done
 }
 
