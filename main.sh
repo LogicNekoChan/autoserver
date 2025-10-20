@@ -20,7 +20,7 @@ function main_menu() {
         2) source "$(dirname "$0")/container_manage/main.sh" ;;
         3) source "$(dirname "$0")/modules/crontab_manage.sh" ;;
         4) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
-        5) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
+        5) source "$(dirname "$0")/service/pgp_manager.sh" ;;
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
     esac
