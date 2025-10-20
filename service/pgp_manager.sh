@@ -27,32 +27,38 @@ list_local_keys(){
 }
 
 select_keys(){
-  local prompt="$1" arr=() IFS=$'\n'
-  # 一次性读出所有 UID
-  mapfile -t arr < <(gpg --list-keys --with-colons |awk -F: '$1=="uid"{print $10}')
-  if ((${#arr[@]}==0)); then
-    echo -e "${RED}本地没有公钥，无法加密！${NC}"
-    return 1
-  fi
+  local prompt="$1"
+  local -a uid keyid                       # 并行数组
+  local line i=0
+
+  # 一次性读完所有 pub + uid
+  while IFS= read -r line; do
+    case "$line" in
+      pub*) keyid[i]=${line%%:*}; keyid[i]=${keyid[i]##*:} ;;  # 取第5段
+      uid*) uid[i]=${line%%:*};  uid[i]=${uid[i]##*:} ;;      # 取第10段
+    esac
+  done < <(gpg --list-keys --with-colons)
+
+  ((${#uid[@]})) || { echo -e "${RED}本地没有公钥，无法加密！${NC}"; return 1; }
 
   echo -e "${YELLOW}${prompt}${NC}"
-  # 这里把序号和 UID 一起打印出来
-  for i in "${!arr[@]}"; do
-    printf "%2d) %s\n" $((i+1)) "${arr[i]}"
+  # 打印三列表头
+  printf "%2s  %-30s  %s\n" "序号" "UID" "KeyID"
+  for ((i=0;i<${#uid[@]};i++)); do
+    printf "%2d  %-30s  %s\n" $((i+1)) "${uid[i]}" "${keyid[i]}"
   done
 
   read -p "请选择序号（多个用逗号分隔）: " picks
-  # 下面保持你原来的合法性检查与 KeyID 提取逻辑不变
+  local ok=1
   for p in ${picks//,/ }; do
-    [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#arr[@]} ]] || {
-      echo -e "${RED}无效序号: $p${NC}"
-      return 1
-    }
-    gpg --list-keys --with-colons |
-      awk -F: -v n=$p '$1=="uid"{i++} i==n{print $10; exit}' |
-      xargs gpg --list-keys --with-colons |
-      awk -F: '$1=="pub"{print $5; exit}'
+    if [[ $p =~ ^[0-9]+$ && $p -ge 1 && $p -le ${#uid[@]} ]]; then
+      echo "${keyid[$((p-1))]}"   # 输出真正的 KeyID
+    else
+      echo -e "${RED}无效序号: $p${NC}" >&2
+      ok=0
+    fi
   done
+  return $ok
 }
 
 ########## 菜单 ##########
