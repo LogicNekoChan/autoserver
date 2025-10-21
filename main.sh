@@ -1,4 +1,7 @@
 #!/bin/bash
+# 自动进入项目根目录，保证所有相对路径正确
+BASE_DIR="/root/autoserver"
+cd "$BASE_DIR" || { echo "无法进入 $BASE_DIR ，脚本终止！"; exit 1; }
 
 # 如果 linuxbash 命令不存在，就自动创建软链接
 if ! command -v linuxbash &>/dev/null; then
@@ -8,8 +11,7 @@ if ! command -v linuxbash &>/dev/null; then
     sleep 2
 fi
 
-# 你原来的代码从这里开始
-source "$(dirname "$0")/utils/common.sh"
+source "utils/common.sh"      # 现在路径一定正确
 
 function main_menu() {
     clear
@@ -19,18 +21,31 @@ function main_menu() {
     echo "3. Crontab 任务管理"
     echo "4. 重装系统"
     echo "5. PGP管理"
+    echo "6. 卸载关联（取消 linuxbash 命令）"
     echo "0. 退出"
     echo "============================================"
     read -p "请选择操作: " choice
     case "$choice" in
-        1) source "$(dirname "$0")/modules/setup_env.sh" ;;
-        2) source "$(dirname "$0")/container_manage/main.sh" ;;
-        3) source "$(dirname "$0")/modules/crontab_manage.sh" ;;
-        4) source "$(dirname "$0")/modules/reinstall_os.sh" ;;
-        5) source "$(dirname "$0")/service/pgp_manager.sh" ;;
+        1) source "modules/setup_env.sh" ;;
+        2) source "container_manage/main.sh" ;;
+        3) source "modules/crontab_manage.sh" ;;
+        4) source "modules/reinstall_os.sh" ;;
+        5) source "service/pgp_manager.sh" ;;
+        6) uninstall_linuxbash ;;
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
     esac
+}
+
+function uninstall_linuxbash() {
+    if [[ -L /usr/local/bin/linuxbash ]]; then
+        sudo rm /usr/local/bin/linuxbash
+        echo "已删除 linuxbash 命令关联。"
+    else
+        echo "linuxbash 命令未激活，无需卸载。"
+    fi
+    echo "按任意键返回主菜单..."
+    read -n 1
 }
 
 while true; do
