@@ -11,7 +11,7 @@ function main_menu() {
     echo "2. 容器管理（部署/备份/恢复/删除）"
     echo "3. Crontab 任务管理"
     echo "4. 重装系统"
-    echo "5. 重装系统"
+    echo "5. PGP管理"
     echo "0. 退出"
     echo "============================================"
     read -p "请选择操作: " choice
