@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ==========================================
 # Ubuntu 交互式 PGP 密钥/文件管理器
-# 作者：Austin Hang
-# 特点：中文菜单、自动引号、目录级相对路径
+# 新增：导出公钥 & 导出私钥 分离
+# 全程中文、自动引号、目录级相对路径
 # ==========================================
 set -euo pipefail
 
-########## 工具检查 ##########
+########## 依赖检查 ##########
 for cmd in gpg tar; do
   command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install gnupg tar"; exit 1; }
 done
@@ -17,15 +17,12 @@ log()  { echo -e "${GREEN}[提示]${NC} $*"; }
 warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
 err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
-########## 安全读取 ##########
+########## 安全读路径（自动去引号+转绝对路径） ##########
 read_path(){
   local _path
   read -rp "$1" _path
-  # 去掉两端引号（用户可能手动输入引号）
-  _path="${_path%\"}"
-  _path="${_path#\"}"
+  _path="${_path%\"}"; _path="${_path#\"}"   # 去掉两端引号
   [[ -e "$_path" ]] || { err "路径不存在：$_path"; return 1; }
-  # 返回绝对路径
   realpath "$_path"
 }
 
@@ -44,23 +41,33 @@ import_key(){
 }
 
 ########## 3. 导出公钥 ##########
-export_key(){
+export_pub_key(){
   local email out
   read -rp "要导出的邮箱： " email
-  read -rp "保存到哪个文件（直接回车默认 ${email}.asc）： " out
-  [[ -z "$out" ]] && out="${email}.asc"
+  read -rp "保存到哪个文件（直接回车默认 ${email}_pub.asc）： " out
+  [[ -z "$out" ]] && out="${email}_pub.asc"
   gpg --armor --export "$email" > "$out"
   log "✅ 公钥已导出到 $(realpath "$out")"
 }
 
-########## 4. 删除密钥 ##########
+########## 4. 导出私钥 ##########
+export_sec_key(){
+  local email out
+  read -rp "要导出的邮箱： " email
+  read -rp "保存到哪个文件（直接回车默认 ${email}_sec.asc）： " out
+  [[ -z "$out" ]] && out="${email}_sec.asc"
+  gpg --armor --export-secret-keys "$email" > "$out"
+  log "⚠️  私钥已导出到 $(realpath "$out")，请妥善保管！"
+}
+
+########## 5. 删除密钥 ##########
 delete_key(){
   local email
   read -rp "要删除的邮箱： " email
   gpg --delete-secret-and-public-keys "$email" 2>/dev/null && log "✅ 已删除" || warn "可能已取消或密钥不存在"
 }
 
-########## 5. 加密 ##########
+########## 6. 加密 ##########
 encrypt(){
   local target recipient target_dir basename
   target=$(read_path "要加密的文件或文件夹：")
@@ -80,7 +87,7 @@ encrypt(){
   fi
 }
 
-########## 6. 解密 ##########
+########## 7. 解密 ##########
 decrypt(){
   local gpg_file dir basename
   gpg_file=$(read_path "要解密的 .gpg 文件：")
@@ -99,7 +106,7 @@ decrypt(){
   fi
 }
 
-########## 7. 列出密钥 ##########
+########## 8. 列出密钥 ##########
 list_keys(){
   echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
   gpg --list-keys
@@ -113,21 +120,23 @@ while true; do
   echo "1) 创建新密钥"
   echo "2) 导入密钥"
   echo "3) 导出公钥"
-  echo "4) 删除密钥"
-  echo "5) 加密文件/文件夹"
-  echo "6) 解密文件/文件夹"
-  echo "7) 查看已有密钥"
-  echo "8) 退出"
-  read -rp "请选择操作（1-8）：" choice
+  echo "4) 导出私钥"
+  echo "5) 删除密钥"
+  echo "6) 加密文件/文件夹"
+  echo "7) 解密文件/文件夹"
+  echo "8) 查看已有密钥"
+  echo "9) 退出"
+  read -rp "请选择操作（1-9）：" choice
   case $choice in
     1) create_key ;;
     2) import_key ;;
-    3) export_key ;;
-    4) delete_key ;;
-    5) encrypt ;;
-    6) decrypt ;;
-    7) list_keys ;;
-    8) log "bye~"; exit 0 ;;
-    *) err "请输入 1-8 之间的数字" ;;
+    3) export_pub_key ;;
+    4) export_sec_key ;;
+    5) delete_key ;;
+    6) encrypt ;;
+    7) decrypt ;;
+    8) list_keys ;;
+    9) log "bye~"; exit 0 ;;
+    *) err "请输入 1-9 之间的数字" ;;
   esac
 done
