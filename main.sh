@@ -1,7 +1,14 @@
 #!/bin/bash
-# autoserver 主入口
 
-# 加载公共函数
+# 如果 linuxbash 命令不存在，就自动创建软链接
+if ! command -v linuxbash &>/dev/null; then
+    echo "首次运行，正在注册 linuxbash 命令..."
+    sudo ln -s "$(realpath "$0")" /usr/local/bin/linuxbash
+    echo "注册完成！现在你可以在任何地方输入 linuxbash 来运行本脚本。"
+    sleep 2
+fi
+
+# 你原来的代码从这里开始
 source "$(dirname "$0")/utils/common.sh"
 
 function main_menu() {
