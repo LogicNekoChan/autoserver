@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------
 # restore.sh  ——  容器数据恢复模块（bind / volume 自动识别 & 多挂载一次恢复）
+# 与 backup.sh / delete.sh 配套使用
 # ------------------------------------------------------------------
 set -euo pipefail
 IFS=$'\n\t'
@@ -9,8 +10,8 @@ BACKUP_DIR="${BACKUP_DIR:-/root/backup}"
 LOG_FILE="${LOG_FILE:-/root/autoserver.log}"
 TMP_TAR_DIR="${TMP_TAR_DIR:-/tmp/docker_restore}"
 
-log() { printf '%s - %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE" >/dev/null; }
-die() { log "[ERROR] $*"; printf '[!] %s\n' "$*" >&2; exit 1; }
+log() { printf '[%(%F %T)T] %s\n' -1 "$*" | tee -a "$LOG_FILE" >/dev/null; }
+die() { printf '%b[ERROR]%b %s\n' '\033[31m' '\033[0m' "$*" >&2; exit 1; }
 
 readonly GREEN='\033[0;32m'
 readonly RED='\033[0;31m'
@@ -55,8 +56,7 @@ restore_system() {
     fi
 
     # ---------- 收集挂载信息 ----------
-    local -A bind_map vol_map   # Destination -> Source
-    local line
+    declare -A bind_map vol_map          # 保证数组变量已声明，避免 unbound
     while IFS=: read -r src dst; do
         [[ -n $src && -n $dst ]] && bind_map["$dst"]="$src"
     done < <(docker inspect "$target" --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}:{{.Destination}}{{printf "\n"}}{{end}}{{end}}')
@@ -97,7 +97,6 @@ restore_system() {
         [[ -f $arc ]] || { log "跳过：未找到 volume 备份包 $(basename "$arc")"; ((fail++)); continue; }
 
         printf '  [%2d/%d] volume %s ... ' $((ok+fail+1)) $((${#bind_map[@]} + ${#vol_map[@]}))
-        # 先把 tar 包拷进临时目录，再启动临时容器写卷
         cp -f "$arc" "$TMP_TAR_DIR/${vol_name}.tar.gz"
         if docker run --rm \
                -v "${vol_name}:/to_vol:rw" \
