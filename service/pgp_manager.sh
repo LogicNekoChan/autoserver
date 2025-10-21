@@ -1,144 +1,133 @@
 #!/usr/bin/env bash
 # ==========================================
-# PGP Key Manager for Ubuntu
-# Author: Austin Hang
-# Usage: ./pgp-manager.sh [command] [args...]
+# Ubuntu 交互式 PGP 密钥/文件管理器
+# 作者：Austin Hang
+# 特点：中文菜单、自动引号、目录级相对路径
 # ==========================================
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+########## 工具检查 ##########
+for cmd in gpg tar; do
+  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install gnupg tar"; exit 1; }
+done
 
-# Logging
-log() { echo -e "${GREEN}[INFO]${NC} $*"; }
-err() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-die() { err "$*"; exit 1; }
+########## 彩色输出 ##########
+RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[36m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[提示]${NC} $*"; }
+warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
+err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
-# Helpers
-quote() { printf '%q' "$1"; }
-
-# Validate dependencies
-command -v gpg >/dev/null || die "gpg not found. Install with: sudo apt install gnupg"
-command -v tar >/dev/null || die "tar not found."
-
-# ==========================================
-# Commands
-# ==========================================
-
-cmd_create_key() {
-    log "Creating new PGP key..."
-    gpg --full-generate-key
+########## 安全读取 ##########
+read_path(){
+  local _path
+  read -rp "$1" _path
+  # 去掉两端引号（用户可能手动输入引号）
+  _path="${_path%\"}"
+  _path="${_path#\"}"
+  [[ -e "$_path" ]] || { err "路径不存在：$_path"; return 1; }
+  # 返回绝对路径
+  realpath "$_path"
 }
 
-cmd_import_key() {
-    local file="${1:?Usage: import <file.asc>}"
-    [[ -f "$file" ]] || die "File not found: $file"
-    gpg --import "$file"
-    log "Key imported from $file"
+########## 1. 创建密钥 ##########
+create_key(){
+  log "启动 GPG 全量密钥生成向导..."
+  gpg --full-generate-key
 }
 
-cmd_export_key() {
-    local email="${1:?Usage: export <email>}"
-    local output="${2:-${email}.asc}"
-    gpg --armor --export "$email" > "$output"
-    log "Public key exported to $output"
+########## 2. 导入密钥 ##########
+import_key(){
+  local asc
+  asc=$(read_path "请输入密钥文件路径（.asc/.gpg）：")
+  gpg --import "$asc"
+  log "✅ 已导入"
 }
 
-cmd_delete_key() {
-    local email="${1:?Usage: delete <email>}"
-    log "Deleting key for $email"
-    gpg --delete-secret-and-public-keys "$email"
+########## 3. 导出公钥 ##########
+export_key(){
+  local email out
+  read -rp "要导出的邮箱： " email
+  read -rp "保存到哪个文件（直接回车默认 ${email}.asc）： " out
+  [[ -z "$out" ]] && out="${email}.asc"
+  gpg --armor --export "$email" > "$out"
+  log "✅ 公钥已导出到 $(realpath "$out")"
 }
 
-cmd_encrypt() {
-    local target="${1:?Usage: encrypt <file_or_dir> [recipient]}"
-    local recipient="${2:-}"
-    [[ -e "$target" ]] || die "Target not found: $target"
-
-    # Ask for recipient if not provided
-    if [[ -z "$recipient" ]]; then
-        read -rp "Enter recipient email: " recipient
-    fi
-
-    local target_dir
-    target_dir=$(dirname "$(realpath "$target")")
-    local basename
-    basename=$(basename "$target")
-
-    cd "$target_dir"
-
-    if [[ -d "$basename" ]]; then
-        log "Encrypting directory: $basename"
-        tar czf - "$basename" | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
-    else
-        log "Encrypting file: $basename"
-        gpg -e -r "$recipient" -o "${basename}.gpg" "$basename"
-    fi
-
-    log "Encrypted output: ${target_dir}/${basename}.tar.gz.gpg or ${basename}.gpg"
+########## 4. 删除密钥 ##########
+delete_key(){
+  local email
+  read -rp "要删除的邮箱： " email
+  gpg --delete-secret-and-public-keys "$email" 2>/dev/null && log "✅ 已删除" || warn "可能已取消或密钥不存在"
 }
 
-cmd_decrypt() {
-    local file="${1:?Usage: decrypt <file.gpg>}"
-    [[ -f "$file" ]] || die "File not found: $file"
+########## 5. 加密 ##########
+encrypt(){
+  local target recipient target_dir basename
+  target=$(read_path "要加密的文件或文件夹：")
+  read -rp "接收者邮箱： " recipient
 
-    local target_dir
-    target_dir=$(dirname "$(realpath "$file")")
-    local basename
-    basename=$(basename "$file")
+  target_dir=$(dirname "$target")
+  basename=$(basename "$target")
+  cd "$target_dir"
 
-    cd "$target_dir"
-
-    if [[ "$basename" == *.tar.gz.gpg ]]; then
-        log "Decrypting and extracting directory: $basename"
-        gpg -d "$basename" | tar xzf -
-    else
-        local output="${basename%.gpg}"
-        log "Decrypting file: $basename -> $output"
-        gpg -d "$basename" > "$output"
-    fi
-
-    log "Decryption complete in $target_dir"
+  if [[ -d "$basename" ]]; then
+    log "检测到目录，正在打包并加密..."
+    tar czf - "$basename" | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
+    log "✅ 已生成 ${basename}.tar.gz.gpg"
+  else
+    gpg -e -r "$recipient" -o "${basename}.gpg" "$basename"
+    log "✅ 已生成 ${basename}.gpg"
+  fi
 }
 
-# ==========================================
-# Main CLI
-# ==========================================
+########## 6. 解密 ##########
+decrypt(){
+  local gpg_file dir basename
+  gpg_file=$(read_path "要解密的 .gpg 文件：")
+  dir=$(dirname "$gpg_file")
+  basename=$(basename "$gpg_file")
+  cd "$dir"
 
-usage() {
-    cat <<EOF
-Usage: $0 <command> [args...]
-
-Commands:
-  create                        Create a new PGP key
-  import <file.asc>             Import public/private key
-  export <email> [output.asc]   Export public key
-  delete <email>                Delete key pair
-  encrypt <path> [recipient]    Encrypt file or folder
-  decrypt <file.gpg>            Decrypt file or folder
-
-Examples:
-  $0 encrypt "My Folder" user@example.com
-  $0 decrypt "My Folder.tar.gz.gpg"
-EOF
-    exit 1
+  if [[ "$basename" == *.tar.gz.gpg ]]; then
+    log "检测到目录包，正在解密并解压..."
+    gpg -d "$basename" | tar xzf -
+    log "✅ 目录已恢复"
+  else
+    local out="${basename%.gpg}"
+    gpg -d "$basename" > "$out"
+    log "✅ 文件已解密为 $out"
+  fi
 }
 
-main() {
-    [[ $# -eq 0 ]] && usage
-    local cmd="$1"; shift
-    case "$cmd" in
-        create) cmd_create_key ;;
-        import) cmd_import_key "$@" ;;
-        export) cmd_export_key "$@" ;;
-        delete) cmd_delete_key "$@" ;;
-        encrypt) cmd_encrypt "$@" ;;
-        decrypt) cmd_decrypt "$@" ;;
-        *) usage ;;
-    esac
+########## 7. 列出密钥 ##########
+list_keys(){
+  echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
+  gpg --list-keys
+  echo -e "\n${BLUE}====== 私钥列表 ======${NC}"
+  gpg --list-secret-keys
 }
 
-main "$@"
+########## 菜单循环 ##########
+while true; do
+  echo -e "\n${BLUE}======== PGP 中文管家 ========${NC}"
+  echo "1) 创建新密钥"
+  echo "2) 导入密钥"
+  echo "3) 导出公钥"
+  echo "4) 删除密钥"
+  echo "5) 加密文件/文件夹"
+  echo "6) 解密文件/文件夹"
+  echo "7) 查看已有密钥"
+  echo "8) 退出"
+  read -rp "请选择操作（1-8）：" choice
+  case $choice in
+    1) create_key ;;
+    2) import_key ;;
+    3) export_key ;;
+    4) delete_key ;;
+    5) encrypt ;;
+    6) decrypt ;;
+    7) list_keys ;;
+    8) log "bye~"; exit 0 ;;
+    *) err "请输入 1-8 之间的数字" ;;
+  esac
+done
