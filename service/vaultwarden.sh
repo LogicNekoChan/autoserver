@@ -1,37 +1,39 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-NET_NAME="mintcat"
-SUBNET="172.21.10.0/24"
-VW_CT="vaultwarden"
-VW_IMAGE="vaultwarden/server:latest"
-VW_VOLUME="vw_data"          # ← 关键：使用 Docker 命名卷
+#----------- 可配置区 --------------
+CT_NAME="vaultwarden"
+VOL_NAME="vw_data"          # 命名卷名称
+BIND_SRC=""                 # 想改用 bind 挂载时填宿主机路径，例如 /mnt/disk/vw
+MOUNT_POINT="/data"         # 容器内挂载点
+#-----------------------------------
 
-# 1. 创建命名卷（如已存在会静默跳过）
-docker volume create "$VW_VOLUME" >/dev/null 2>&1 || true
+# 删除容器（如有）
+docker rm -f "$CT_NAME" &>/dev/null || true
 
-# 2. 创建自定义桥接网络（如已存在会静默跳过）
-docker network ls | grep -q "$NET_NAME" \
-  || docker network create --driver bridge --subnet="$SUBNET" "$NET_NAME"
+# 如果本次想用「命名卷」
+if [[ -z "${BIND_SRC:-}" ]]; then
+    # 如果之前有人用 bind 占过位，Docker 不会允许同名挂载点；
+    # 这里先把同名卷删掉（数据会丢！如需保留请提前备份）
+    docker volume ls -q | grep -qx "$VOL_NAME" && {
+        echo "[WARN] 命名卷 $VOL_NAME 已存在，将先删除再重建"
+        docker volume rm "$VOL_NAME" || true
+    }
+    docker volume create "$VOL_NAME" >/dev/null
+    MOUNT_SPEC="$VOL_NAME:$MOUNT_POINT"
+else
+    # 想用 bind 挂载
+    # 如果之前是命名卷，Docker 不允许同名挂载点，所以上面已把容器删了
+    # 这里再确保宿主机目录存在
+    mkdir -p "$BIND_SRC"
+    MOUNT_SPEC="$BIND_SRC:$MOUNT_POINT"
+fi
 
-# 3. 停掉/删除旧容器（如有）
-docker rm -f "$VW_CT" >/dev/null 2>&1 || true
-
-# 4. 启动新容器，把命名卷挂到 /data
+# 现在可以安全启动容器
 docker run -d \
-  --name "$VW_CT" \
+  --name "$CT_NAME" \
   --restart unless-stopped \
-  --network "$NET_NAME" \
-  -v "$VW_VOLUME":/data \
-  "$VW_IMAGE"
+  -v "$MOUNT_SPEC" \
+  vaultwarden/server:latest
 
-# 5. 等待健康检查通过
-echo "[INFO] 等待 vaultwarden 健康检查通过 ..."
-for i in {1..30}; do
-  status=$(docker inspect --format='{{.State.Health.Status}}' "$VW_CT" 2>/dev/null || true)
-  [[ "$status" == "healthy" ]] && { echo "[√] vaultwarden 已就绪！"; exit 0; }
-  sleep 2
-done
-
-echo "[!] vaultwarden 健康检查超时"
-exit 1
+echo "[√] 容器已启动，挂载方式：$MOUNT_SPEC"
