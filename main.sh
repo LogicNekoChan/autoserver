@@ -30,7 +30,7 @@ function main_menu() {
         2) source "container_manage/main.sh" ;;
         3) source "modules/crontab_manage.sh" ;;
         4) source "modules/reinstall_os.sh" ;;
-        5) source "service/pgp_manager.sh" ;;
+        5) source "modules/pgp_manager.sh" ;;
         6) uninstall_linuxbash ;;
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
