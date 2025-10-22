@@ -68,15 +68,38 @@ delete_key(){
 }
 
 ########## 6. 加密 ##########
+########## 6. 加密（带编号选择） ##########
 encrypt(){
-  local target recipient target_dir basename
-  target=$(read_path "要加密的文件或文件夹：")
-  read -rp "接收者邮箱： " recipient
+  local target recipient target_dir basename idx n
 
+  #---- 1. 先列出本地公钥，带编号 ----#
+  echo -e "\n${BLUE}====== 本地公钥列表 ======${NC}"
+  mapfile -t keys < <(gpg --list-keys --with-colons \
+      | awk -F: '$1=="uid"{print $10}' | sed 's/.*<\(.*\)>.*/\1/')
+  n=${#keys[@]}
+  if (( n==0 )); then
+    warn "本地没有任何公钥，请先创建或导入公钥！"
+    return 1
+  fi
+  for i in "${!keys[@]}"; do
+    printf "  %2d) %s\n" $((i+1)) "${keys[i]}"
+  done
+
+  #---- 2. 让用户选编号 ----#
+  while true; do
+    read -rp "请选择接收者编号（1-$n）：" idx
+    [[ "$idx" =~ ^[0-9]+$ ]] && (( idx>=1 && idx<=n )) && break
+    err "请输入 1-$n 之间的有效编号！"
+  done
+  recipient="${keys[$((idx-1))]}"
+
+  #---- 3. 读文件/目录路径 ----#
+  target=$(read_path "要加密的文件或文件夹：")
   target_dir=$(dirname "$target")
   basename=$(basename "$target")
   cd "$target_dir"
 
+  #---- 4. 加密逻辑（同原来） ----#
   if [[ -d "$basename" ]]; then
     log "检测到目录，正在打包并加密..."
     tar czf - "$basename" | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
@@ -86,7 +109,6 @@ encrypt(){
     log "✅ 已生成 ${basename}.gpg"
   fi
 }
-
 ########## 7. 解密 ##########
 decrypt(){
   local gpg_file dir basename
