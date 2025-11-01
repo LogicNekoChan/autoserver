@@ -21,7 +21,8 @@ function main_menu() {
     echo "3. Crontab 任务管理"
     echo "4. 重装系统"
     echo "5. PGP管理"
-    echo "6. 卸载关联（取消 linuxbash 命令）"
+    echo "6. 7zip管理"
+    echo "7. 卸载关联（取消 linuxbash 命令）"
     echo "0. 退出"
     echo "============================================"
     read -p "请选择操作: " choice
@@ -31,7 +32,8 @@ function main_menu() {
         3) source "modules/crontab_manage.sh" ;;
         4) source "modules/reinstall_os.sh" ;;
         5) source "modules/pgp_manager.sh" ;;
-        6) uninstall_linuxbash ;;
+        6) source "modules/7zip_manager.sh" ;;
+        7) uninstall_linuxbash ;;
         0) exit 0 ;;
         *) echo "无效选择，请重新输入！" && sleep 1 ;;
     esac
