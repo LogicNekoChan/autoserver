@@ -142,4 +142,18 @@ decompress_split(){
 ########## 菜单循环 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
-  echo "1) 单个文件或目录
+  echo "1) 单个文件或目录打包"
+  echo "2) 分卷压缩"
+  echo "3) 解压单个压缩包"
+  echo "4) 解压分卷压缩包"
+  echo "5) 退出"
+  read -rp "请选择操作（1-5）：" choice
+  case $choice in
+    1) compress_single ;;
+    2) compress_split ;;
+    3) decompress_single ;;
+    4) decompress_split ;;
+    5) log "bye~"; exit 0 ;;
+    *) err "请输入 1-5 之间的数字" ;;
+  esac
+done
