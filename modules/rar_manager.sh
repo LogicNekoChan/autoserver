@@ -36,9 +36,9 @@ compress_single(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 "$output_dir/$output" "$target"
+    rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   else
-    rar a -ep1 "$output_dir/$output" "$target"
+    rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
@@ -58,9 +58,9 @@ compress_split(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 "$output_dir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   else
-    rar a -v"$volume_size" -ep1 "$output_dir/$output" "$target"
+    rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
