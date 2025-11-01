@@ -108,6 +108,7 @@ decompress_split(){
     err "解压过程中出现错误"
   fi
 }
+
 ########## 菜单循环 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
