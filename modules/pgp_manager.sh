@@ -66,8 +66,6 @@ delete_key(){
   read -rp "要删除的邮箱： " email
   gpg --delete-secret-and-public-keys "$email" 2>/dev/null && log "✅ 已删除" || warn "可能已取消或密钥不存在"
 }
-
-########## 6. 加密 ##########
 ########## 6. 加密（带编号选择） ##########
 encrypt(){
   local target recipient target_dir basename idx n
@@ -102,10 +100,10 @@ encrypt(){
   #---- 4. 加密逻辑（同原来） ----#
   if [[ -d "$basename" ]]; then
     log "检测到目录，正在打包并加密..."
-    tar czf - "$basename" | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
+    tar czf - "$basename" | gpg --progress -e -r "$recipient" > "${basename}.tar.gz.gpg"
     log "✅ 已生成 ${basename}.tar.gz.gpg"
   else
-    gpg -e -r "$recipient" -o "${basename}.gpg" "$basename"
+    gpg --progress -e -r "$recipient" -o "${basename}.gpg" "$basename"
     log "✅ 已生成 ${basename}.gpg"
   fi
 }
@@ -119,11 +117,11 @@ decrypt(){
 
   if [[ "$basename" == *.tar.gz.gpg ]]; then
     log "检测到目录包，正在解密并解压..."
-    gpg -d "$basename" | tar xzf -
+    gpg --progress -d "$basename" | tar xzf -
     log "✅ 目录已恢复"
   else
     local out="${basename%.gpg}"
-    gpg -d "$basename" > "$out"
+    gpg --progress -d "$basename" > "$out"
     log "✅ 文件已解密为 $out"
   fi
 }
