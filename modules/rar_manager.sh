@@ -53,7 +53,7 @@ compress_split(){
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  read -rp "请输入分卷大小（默认 2048m）： " volume_size
+  read -rp "请输入分卷大小（默认 2048MB）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2048m"
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
