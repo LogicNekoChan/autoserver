@@ -112,7 +112,7 @@ optimize_system() {
 
     case "${os_type}" in
         ubuntu|debian)
-            safe_exec "apt-get update && apt-get install -y curl jq vim neofetch"
+            safe_exec "apt-get update && apt-get install -y curl jq vim neofetch pv"
             safe_exec "sysctl -p /etc/sysctl.conf"
             ;;
         centos|rhel)
