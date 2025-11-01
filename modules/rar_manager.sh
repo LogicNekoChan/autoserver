@@ -74,6 +74,10 @@ decompress_single(){
   local archive output_dir
   archive=$(read_path "请输入压缩包路径：")
   output_dir=$(dirname "$archive")
+  read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
+  if [[ -n "$user_output_dir" ]]; then
+    output_dir=$(realpath "$user_output_dir")
+  fi
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
@@ -94,6 +98,10 @@ decompress_split(){
   local archive output_dir
   archive=$(read_path "请输入分卷压缩包路径（如 part1.rar）：")
   output_dir=$(dirname "$archive")
+  read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
+  if [[ -n "$user_output_dir" ]]; then
+    output_dir=$(realpath "$user_output_dir")
+  fi
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
