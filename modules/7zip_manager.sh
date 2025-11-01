@@ -8,8 +8,8 @@
 set -euo pipefail
 
 ########## 依赖检查 ##########
-for cmd in 7z pv; do
-  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install p7zip-full pv"; exit 1; }
+for cmd in 7z; do
+  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install p7zip-full"; exit 1; }
 done
 
 ########## 彩色输出 ##########
@@ -36,9 +36,9 @@ compress_single(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" -mhe=on "$output_dir/$output" "$target" | pv -l
+    7z a -p"$password" -mhe=on "$output_dir/$output" "$target"
   else
-    7z a "$output_dir/$output" "$target" | pv -l
+    7z a "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
@@ -58,9 +58,9 @@ compress_split(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" -mhe=on -v"$volume_size" "$output_dir/$output" "$target" | pv -l
+    7z a -p"$password" -mhe=on -v"$volume_size" "$output_dir/$output" "$target"
   else
-    7z a -v"$volume_size" "$output_dir/$output" "$target" | pv -l
+    7z a -v"$volume_size" "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
@@ -77,9 +77,9 @@ decompress_single(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive" | pv -l
+    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive"
   else
-    7z x -o"$output_dir" -aoa -spe "$archive" | pv -l
+    7z x -o"$output_dir" -aoa -spe "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -96,9 +96,9 @@ decompress_split(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive" | pv -l
+    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive"
   else
-    7z x -o"$output_dir" -aoa -spe "$archive" | pv -l
+    7z x -o"$output_dir" -aoa -spe "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
