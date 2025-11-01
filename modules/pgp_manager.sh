@@ -100,11 +100,19 @@ encrypt(){
   #---- 4. 加密逻辑（同原来） ----#
   if [[ -d "$basename" ]]; then
     log "检测到目录，正在打包并加密..."
-    tar czf - "$basename" | gpg --progress -e -r "$recipient" > "${basename}.tar.gz.gpg"
-    log "✅ 已生成 ${basename}.tar.gz.gpg"
+    tar czf - "$basename" | pv | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
+    if [[ $? -eq 0 ]]; then
+      log "✅ 已生成 ${basename}.tar.gz.gpg"
+    else
+      err "加密过程中出现错误"
+    fi
   else
-    gpg --progress -e -r "$recipient" -o "${basename}.gpg" "$basename"
-    log "✅ 已生成 ${basename}.gpg"
+    pv "$basename" | gpg -e -r "$recipient" -o "${basename}.gpg"
+    if [[ $? -eq 0 ]]; then
+      log "✅ 已生成 ${basename}.gpg"
+    else
+      err "加密过程中出现错误"
+    fi
   fi
 }
 ########## 7. 解密 ##########
@@ -117,15 +125,22 @@ decrypt(){
 
   if [[ "$basename" == *.tar.gz.gpg ]]; then
     log "检测到目录包，正在解密并解压..."
-    gpg --progress -d "$basename" | tar xzf -
-    log "✅ 目录已恢复"
+    gpg -d "$basename" | pv | tar xzf -
+    if [[ $? -eq 0 ]]; then
+      log "✅ 目录已恢复"
+    else
+      err "解密过程中出现错误"
+    fi
   else
     local out="${basename%.gpg}"
-    gpg --progress -d "$basename" > "$out"
-    log "✅ 文件已解密为 $out"
+    pv "$basename" | gpg -d > "$out"
+    if [[ $? -eq 0 ]]; then
+      log "✅ 文件已解密为 $out"
+    else
+      err "解密过程中出现错误"
+    fi
   fi
 }
-
 ########## 8. 列出密钥 ##########
 list_keys(){
   echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
