@@ -8,8 +8,8 @@
 set -euo pipefail
 
 ########## 依赖检查 ##########
-for cmd in rar; do
-  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install rar"; exit 1; }
+for cmd in rar unrar; do
+  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install $cmd"; exit 1; }
 done
 
 ########## 彩色输出 ##########
@@ -77,9 +77,9 @@ decompress_single(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar x -p"$password" -o"$output_dir" "$archive"
+    unrar x -p"$password" "$archive" "$output_dir"
   else
-    rar x -o"$output_dir" "$archive"
+    unrar x "$archive" "$output_dir"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -97,9 +97,9 @@ decompress_split(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar x -p"$password" -o"$output_dir" "$archive"
+    unrar x -p"$password" "$archive" "$output_dir"
   else
-    rar x -o"$output_dir" "$archive"
+    unrar x "$archive" "$output_dir"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -121,9 +121,4 @@ while true; do
   case $choice in
     1) compress_single ;;
     2) compress_split ;;
-    3) decompress_single ;;
-    4) decompress_split ;;
-    5) log "bye~"; exit 0 ;;
-    *) err "请输入 1-5 之间的数字" ;;
-  esac
-done
+    
