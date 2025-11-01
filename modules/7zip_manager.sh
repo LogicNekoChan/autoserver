@@ -29,16 +29,16 @@ read_path(){
 
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
-  local target output_dir output
+  local target output
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.7z"
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    pv "$target" | 7z a -si -p"$password" -mhe=on "$output_dir/$output"
+    7z a -p"$password" -mhe=on "$output_dir/$output" "$target" | pv -l
   else
-    pv "$target" | 7z a -si "$output_dir/$output"
+    7z a "$output_dir/$output" "$target" | pv -l
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
@@ -49,7 +49,7 @@ compress_single(){
 
 ########## 2. 分卷压缩 ##########
 compress_split(){
-  local target output_dir output volume_size
+  local target output volume_size
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.7z"
@@ -58,9 +58,9 @@ compress_split(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    pv "$target" | 7z a -si -p"$password" -mhe=on -v"$volume_size" "$output_dir/$output"
+    7z a -p"$password" -mhe=on -v"$volume_size" "$output_dir/$output" "$target" | pv -l
   else
-    pv "$target" | 7z a -si -v"$volume_size" "$output_dir/$output"
+    7z a -v"$volume_size" "$output_dir/$output" "$target" | pv -l
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
