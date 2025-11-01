@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================
-# 7z 压缩/解压管理器
+# RAR 压缩/解压管理器
 # 支持单个文件或目录打包、分卷压缩、设置压缩密码
 # 支持解压单个压缩包和分卷压缩包
 # 全程中文提示
@@ -8,8 +8,8 @@
 set -euo pipefail
 
 ########## 依赖检查 ##########
-for cmd in 7z; do
-  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install p7zip-full"; exit 1; }
+for cmd in rar; do
+  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install rar"; exit 1; }
 done
 
 ########## 彩色输出 ##########
@@ -32,13 +32,13 @@ compress_single(){
   local target output
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
-  output="${target##*/}.7z"
+  output="${target##*/}.rar"
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" "$output_dir/$output" "$target"
+    rar a -p"$password" -ep1 "$output_dir/$output" "$target"
   else
-    7z a "$output_dir/$output" "$target"
+    rar a -ep1 "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
@@ -52,15 +52,15 @@ compress_split(){
   local target output volume_size
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
-  output="${target##*/}.7z"
+  output="${target##*/}.rar"
   read -rp "请输入分卷大小（默认 2g）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2g"
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" -v"$volume_size" "$output_dir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 "$output_dir/$output" "$target"
   else
-    7z a -v"$volume_size" "$output_dir/$output" "$target"
+    rar a -v"$volume_size" -ep1 "$output_dir/$output" "$target"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
@@ -77,9 +77,9 @@ decompress_single(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa "$archive"
+    rar x -p"$password" -o"$output_dir" "$archive"
   else
-    7z x -o"$output_dir" -aoa "$archive"
+    rar x -o"$output_dir" "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -91,14 +91,14 @@ decompress_single(){
 ########## 4. 解压分卷压缩包 ##########
 decompress_split(){
   local archive output_dir
-  archive=$(read_path "请输入分卷压缩包路径（如 part1.7z）：")
+  archive=$(read_path "请输入分卷压缩包路径（如 part1.rar）：")
   output_dir=$(dirname "$archive")
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa "$archive"
+    rar x -p"$password" -o"$output_dir" "$archive"
   else
-    7z x -o"$output_dir" -aoa "$archive"
+    rar x -o"$output_dir" "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -109,7 +109,7 @@ decompress_split(){
 
 ########## 菜单循环 ##########
 while true; do
-  echo -e "\n${BLUE}======== 7z 压缩/解压管理器 ========${NC}"
+  echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
   echo "1) 单个文件或目录打包"
   echo "2) 分卷压缩"
   echo "3) 解压单个压缩包"
