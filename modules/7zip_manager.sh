@@ -36,7 +36,7 @@ compress_single(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" -mhe=on "$output_dir/$output" "$target"
+    7z a -p"$password" "$output_dir/$output" "$target"
   else
     7z a "$output_dir/$output" "$target"
   fi
@@ -58,7 +58,7 @@ compress_split(){
   read -rsp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z a -p"$password" -mhe=on -v"$volume_size" "$output_dir/$output" "$target"
+    7z a -p"$password" -v"$volume_size" "$output_dir/$output" "$target"
   else
     7z a -v"$volume_size" "$output_dir/$output" "$target"
   fi
@@ -77,9 +77,9 @@ decompress_single(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive"
+    7z x -p"$password" -o"$output_dir" -aoa "$archive"
   else
-    7z x -o"$output_dir" -aoa -spe "$archive"
+    7z x -o"$output_dir" -aoa "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -96,9 +96,9 @@ decompress_split(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    7z x -p"$password" -o"$output_dir" -aoa -spe "$archive"
+    7z x -p"$password" -o"$output_dir" -aoa "$archive"
   else
-    7z x -o"$output_dir" -aoa -spe "$archive"
+    7z x -o"$output_dir" -aoa "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
