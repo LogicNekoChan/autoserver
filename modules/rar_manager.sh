@@ -74,17 +74,24 @@ decompress_single(){
   local archive output_dir
   archive=$(read_path "请输入压缩包路径：")
   output_dir=$(dirname "$archive")
+  
+  # 提示用户输入解压路径
   read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
   if [[ -n "$user_output_dir" ]]; then
     output_dir=$(realpath "$user_output_dir")
+    mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
   fi
+
+  # 提示用户输入解压密码
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
+
   if [[ -n "$password" ]]; then
     unrar x -p"$password" "$archive" "$output_dir"
   else
     unrar x "$archive" "$output_dir"
   fi
+
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
     ls -l "$output_dir"
@@ -98,17 +105,32 @@ decompress_split(){
   local archive output_dir
   archive=$(read_path "请输入分卷压缩包路径（如 part1.rar）：")
   output_dir=$(dirname "$archive")
+  
+  # 提示用户输入解压路径
   read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
   if [[ -n "$user_output_dir" ]]; then
     output_dir=$(realpath "$user_output_dir")
+    mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
   fi
+
+  # 提示用户输入解压密码
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
-  if [[ -n "$password" ]]; then
-    unrar x -p"$password" "$archive" "$output_dir"
-  else
-    unrar x "$archive" "$output_dir"
+
+  # 检测所有分卷文件
+  local part_files=($(ls "$(dirname "$archive")"/*.{rar,part1.rar,part2.rar} 2>/dev/null))
+  if [[ ${#part_files[@]} -eq 0 ]]; then
+    err "未找到分卷文件，请确保所有分卷文件位于同一目录中。"
+    return 1
   fi
+
+  # 解压分卷文件
+  if [[ -n "$password" ]]; then
+    unrar x -p"$password" "${part_files[@]}" "$output_dir"
+  else
+    unrar x "${part_files[@]}" "$output_dir"
+  fi
+
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
     ls -l "$output_dir"
@@ -120,18 +142,4 @@ decompress_split(){
 ########## 菜单循环 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
-  echo "1) 单个文件或目录打包"
-  echo "2) 分卷压缩"
-  echo "3) 解压单个压缩包"
-  echo "4) 解压分卷压缩包"
-  echo "5) 退出"
-  read -rp "请选择操作（1-5）：" choice
-  case $choice in
-    1) compress_single ;;
-    2) compress_split ;;
-    3) decompress_single ;;
-    4) decompress_split ;;
-    5) log "bye~"; exit 0 ;;
-    *) err "请输入 1-5 之间的数字" ;;
-  esac
-done
+  echo "1) 单个文件或目录
