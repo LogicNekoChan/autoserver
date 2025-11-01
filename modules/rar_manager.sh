@@ -121,4 +121,9 @@ while true; do
   case $choice in
     1) compress_single ;;
     2) compress_split ;;
-    
+    3) decompress_single ;;
+    4) decompress_split ;;
+    5) log "bye~"; exit 0 ;;
+    *) err "请输入 1-5 之间的数字" ;;
+  esac
+done
