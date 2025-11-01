@@ -77,9 +77,9 @@ decompress_single(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar x -p"$password" -o"$output_dir" "$archive"
+    rar x -p"$password" -o+ "$archive"
   else
-    rar x -o"$output_dir" "$archive"
+    rar x -o+ "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
@@ -96,9 +96,9 @@ decompress_split(){
   read -rsp "请输入解压密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar x -p"$password" -o"$output_dir" "$archive"
+    rar x -p"$password" -o+ "$archive"
   else
-    rar x -o"$output_dir" "$archive"
+    rar x -o+ "$archive"
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
