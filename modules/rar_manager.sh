@@ -118,7 +118,7 @@ decompress_split(){
   echo
 
   # 检测所有分卷文件
-  local part_files=($(ls "$(dirname "$archive")"/*.{rar,part1.rar,part2.rar} 2>/dev/null))
+  local part_files=($(ls "$(dirname "$archive")"/Fantia.part*.rar 2>/dev/null))
   if [[ ${#part_files[@]} -eq 0 ]]; then
     err "未找到分卷文件，请确保所有分卷文件位于同一目录中。"
     return 1
@@ -138,7 +138,6 @@ decompress_split(){
     err "解压过程中出现错误"
   fi
 }
-
 ########## 菜单循环 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
