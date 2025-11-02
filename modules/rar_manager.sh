@@ -29,14 +29,14 @@ read_path(){
 
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
-  local target output
+  local target output output_dir password
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
   read -rp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    rar a -p"$password" -ep1 -m5 -rr5% -hp "$output_dir/$output" "$target"
   else
     rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -49,7 +49,7 @@ compress_single(){
 
 ########## 2. 分卷压缩 ##########
 compress_split(){
-  local target output volume_size
+  local target output output_dir volume_size password
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
@@ -58,7 +58,7 @@ compress_split(){
   read -rp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% -hp "$output_dir/$output" "$target"
   else
     rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -71,7 +71,7 @@ compress_split(){
 
 ########## 3. 解压单个压缩包 ##########
 decompress_single(){
-  local archive output_dir
+  local archive output_dir password
   archive=$(read_path "请输入压缩包路径：")
   output_dir=$(dirname "$archive")
   
@@ -102,7 +102,7 @@ decompress_single(){
 
 ########## 4. 解压分卷压缩包 ##########
 decompress_split(){
-  local archive output_dir
+  local archive output_dir password
   archive=$(read_path "请输入分卷压缩包路径（如 part1.rar）：")
   output_dir=$(dirname "$archive")
   
