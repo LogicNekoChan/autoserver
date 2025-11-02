@@ -42,14 +42,20 @@ read_password(){
 
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
-  local target output
+  local target output_dir output password encrypt_filenames
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
   password=$(read_password "请输入压缩密码（留空则无密码）：")
   echo
+  read -rp "是否加密文件名？(y/n，默认n)： " encrypt_filenames
+  encrypt_filenames=${encrypt_filenames:-n}
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    if [[ "$encrypt_filenames" == "y" ]]; then
+      rar a -p"$password" -m5 -rr5% "$output_dir/$output" "$target"
+    else
+      rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    fi
   else
     rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -62,7 +68,7 @@ compress_single(){
 
 ########## 2. 分卷压缩 ##########
 compress_split(){
-  local target output volume_size
+  local target output_dir output volume_size password encrypt_filenames
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
@@ -70,8 +76,14 @@ compress_split(){
   [[ -z "$volume_size" ]] && volume_size="2048m"
   password=$(read_password "请输入压缩密码（留空则无密码）：")
   echo
+  read -rp "是否加密文件名？(y/n，默认n)： " encrypt_filenames
+  encrypt_filenames=${encrypt_filenames:-n}
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    if [[ "$encrypt_filenames" == "y" ]]; then
+      rar a -p"$password" -v"$volume_size" -m5 -rr5% "$output_dir/$output" "$target"
+    else
+      rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    fi
   else
     rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -84,7 +96,7 @@ compress_split(){
 
 ########## 3. 解压 ##########
 decompress(){
-  local archive output_dir
+  local archive output_dir password
   archive=$(read_path "请输入压缩包路径：")
   output_dir=$(dirname "$archive")
   
@@ -99,10 +111,11 @@ decompress(){
   password=$(read_password "请输入解压密码（留空则无密码）：")
   echo
 
+  # 解压时处理多层目录结构
   if [[ -n "$password" ]]; then
-    unrar x -p"$password" "$archive" "$output_dir"
+    unrar x -p"$password" -o+ "$archive" "$output_dir"
   else
-    unrar x "$archive" "$output_dir"
+    unrar x -o+ "$archive" "$output_dir"
   fi
 
   if [[ $? -eq 0 ]]; then
