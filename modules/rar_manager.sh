@@ -42,20 +42,14 @@ read_password(){
 
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
-  local target output_dir output password encrypt_filenames
+  local target output encrypt_filenames
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  
-  # 读取密码
   password=$(read_password "请输入压缩密码（留空则无密码）：")
-  echo "密码已输入。"
-
-  # 读取是否加密文件名
+  echo
   read -rp "是否加密文件名？(y/n，默认n)： " encrypt_filenames
   encrypt_filenames=${encrypt_filenames:-n}
-
-  # 执行压缩命令
   if [[ -n "$password" ]]; then
     if [[ "$encrypt_filenames" == "y" ]]; then
       rar a -p"$password" -m5 -rr5% "$output_dir/$output" "$target"
@@ -65,8 +59,6 @@ compress_single(){
   else
     rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
-
-  # 检查压缩是否成功
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
   else
@@ -76,24 +68,16 @@ compress_single(){
 
 ########## 2. 分卷压缩 ##########
 compress_split(){
-  local target output_dir output volume_size password encrypt_filenames
+  local target output volume_size encrypt_filenames
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  
-  # 读取分卷大小
   read -rp "请输入分卷大小（默认 2048MB）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2048m"
-  
-  # 读取密码
   password=$(read_password "请输入压缩密码（留空则无密码）：")
-  echo "密码已输入。"
-
-  # 读取是否加密文件名
+  echo
   read -rp "是否加密文件名？(y/n，默认n)： " encrypt_filenames
   encrypt_filenames=${encrypt_filenames:-n}
-
-  # 执行压缩命令
   if [[ -n "$password" ]]; then
     if [[ "$encrypt_filenames" == "y" ]]; then
       rar a -p"$password" -v"$volume_size" -m5 -rr5% "$output_dir/$output" "$target"
@@ -103,8 +87,6 @@ compress_split(){
   else
     rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
-
-  # 检查压缩是否成功
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
   else
@@ -114,7 +96,7 @@ compress_split(){
 
 ########## 3. 解压 ##########
 decompress(){
-  local archive output_dir password
+  local archive output_dir
   archive=$(read_path "请输入压缩包路径：")
   output_dir=$(dirname "$archive")
   
@@ -127,7 +109,7 @@ decompress(){
 
   # 提示用户输入解压密码
   password=$(read_password "请输入解压密码（留空则无密码）：")
-  echo "密码已输入。"
+  echo
 
   # 解压时处理多层目录结构
   if [[ -n "$password" ]]; then
@@ -136,7 +118,6 @@ decompress(){
     unrar x -o+ "$archive" "$output_dir"
   fi
 
-  # 检查解压是否成功
   if [[ $? -eq 0 ]]; then
     log "✅ 解压完成，文件已保存到 $output_dir"
     ls -l "$output_dir"
