@@ -27,13 +27,26 @@ read_path(){
   realpath "$_path"
 }
 
+########## 读取密码并显示 * ##########
+read_password(){
+  local password char
+  echo -n "$1"
+  while IFS= read -r -s -n1 char; do
+    [[ $char == $'\0' ]] && break
+    password+="$char"
+    echo -n '*'
+  done
+  echo
+  echo "$password"
+}
+
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
   local target output
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  read -rsp "请输入压缩密码（留空则无密码）： " password
+  password=$(read_password "请输入压缩密码（留空则无密码）：")
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
@@ -55,7 +68,7 @@ compress_split(){
   output="${target##*/}.rar"
   read -rp "请输入分卷大小（默认 2048MB）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2048m"
-  read -rsp "请输入压缩密码（留空则无密码）： " password
+  password=$(read_password "请输入压缩密码（留空则无密码）：")
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
@@ -83,7 +96,7 @@ decompress(){
   fi
 
   # 提示用户输入解压密码
-  read -rsp "请输入解压密码（留空则无密码）： " password
+  password=$(read_password "请输入解压密码（留空则无密码）：")
   echo
 
   if [[ -n "$password" ]]; then
