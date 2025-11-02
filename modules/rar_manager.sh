@@ -66,7 +66,7 @@ compress_split(){
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
   read -rp "请输入分卷大小（默认 2048MB）： " volume_size
-  [[ -z "$volume_size" ]] && volume_size="2048m"
+  [[ -z "$volume_size" ]] && volume_size="2000m"
   read -rp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
