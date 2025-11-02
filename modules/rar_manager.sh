@@ -33,7 +33,7 @@ compress_single(){
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  read -rsp "请输入压缩密码（留空则无密码）： " password
+  read -rp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
@@ -55,7 +55,7 @@ compress_split(){
   output="${target##*/}.rar"
   read -rp "请输入分卷大小（默认 2048MB）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2048m"
-  read -rsp "请输入压缩密码（留空则无密码）： " password
+  read -rp "请输入压缩密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
@@ -83,7 +83,7 @@ decompress_single(){
   fi
 
   # 提示用户输入解压密码
-  read -rsp "请输入解压密码（留空则无密码）： " password
+  read -rp "请输入解压密码（留空则无密码）： " password
   echo
 
   if [[ -n "$password" ]]; then
@@ -99,6 +99,7 @@ decompress_single(){
     err "解压过程中出现错误"
   fi
 }
+
 ########## 4. 解压分卷压缩包 ##########
 decompress_split(){
   local archive output_dir
@@ -113,7 +114,7 @@ decompress_split(){
   fi
 
   # 提示用户输入解压密码
-  read -rsp "请输入解压密码（留空则无密码）： " password
+  read -rp "请输入解压密码（留空则无密码）： " password
   echo
 
   # 检测所有分卷文件
@@ -137,6 +138,7 @@ decompress_split(){
     err "解压过程中出现错误"
   fi
 }
+
 ########## 菜单循环 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
