@@ -27,6 +27,17 @@ read_path(){
   realpath "$_path"
 }
 
+########## 检测压缩包完整性 ##########
+check_archive_integrity(){
+  local archive=$1
+  if rar t "$archive" &>/dev/null; then
+    log "✅ 压缩包完整性检查通过：$archive"
+  else
+    err "压缩包完整性检查失败：$archive"
+    return 1
+  fi
+}
+
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
   local target output output_dir password
@@ -42,6 +53,7 @@ compress_single(){
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 压缩完成，文件已保存到 $output_dir/$output"
+    check_archive_integrity "$output_dir/$output"
   else
     err "压缩过程中出现错误"
   fi
@@ -64,6 +76,7 @@ compress_split(){
   fi
   if [[ $? -eq 0 ]]; then
     log "✅ 分卷压缩完成，文件已保存到 $output_dir"
+    check_archive_integrity "$output_dir/$output"
   else
     err "分卷压缩过程中出现错误"
   fi
