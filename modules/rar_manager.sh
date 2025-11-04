@@ -38,61 +38,16 @@ check_archive_integrity(){
   fi
 }
 
-########## 密码缓存文件 ##########
-PASSWORD_CACHE_FILE="$HOME/.rar_password_cache"
-
-########## 读取密码缓存 ##########
-read_password_cache(){
-  if [[ -f "$PASSWORD_CACHE_FILE" ]]; then
-    local passwords=()
-    while IFS= read -r line; do
-      passwords+=("$line")
-    done < "$PASSWORD_CACHE_FILE"
-    echo "${passwords[@]}"
-  else
-    echo ""
-  fi
-}
-
-########## 保存密码到缓存 ##########
-save_password_to_cache(){
-  local password=$1
-  echo "$password" >> "$PASSWORD_CACHE_FILE"
-  chmod 600 "$PASSWORD_CACHE_FILE"
-}
-
-########## 选择密码 ##########
-choose_password(){
-  local passwords=($1)
-  local password=""
-  if [[ ${#passwords[@]} -gt 0 ]]; then
-    echo "已存储的密码："
-    for i in "${!passwords[@]}"; do
-      echo "$((i+1))) ${passwords[$i]}"
-    done
-    read -rp "请选择密码编号（留空则输入新密码）： " choice
-    if [[ -n "$choice" && $choice -le ${#passwords[@]} ]]; then
-      password="${passwords[$((choice-1))]}"
-    fi
-  fi
-  if [[ -z "$password" ]]; then
-    read -rp "请输入密码（留空则无密码）： " password
-  fi
-  echo "$password"
-}
-
 ########## 1. 单个文件或目录打包 ##########
 compress_single(){
   local target output output_dir password
   target=$(read_path "请输入要压缩的文件或目录路径：")
   output_dir=$(dirname "$target")
   output="${target##*/}.rar"
-  local cached_passwords=$(read_password_cache)
-  password=$(choose_password "$cached_passwords")
+  read -rp "请输入密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -ep1 -m5 -rr5% -hp "$output_dir/$output" "$target"
-    save_password_to_cache "$password"
   else
     rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -112,12 +67,10 @@ compress_split(){
   output="${target##*/}.rar"
   read -rp "请输入分卷大小（默认 2000MB）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2000m"
-  local cached_passwords=$(read_password_cache)
-  password=$(choose_password "$cached_passwords")
+  read -rp "请输入密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
     rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr5% -hp "$output_dir/$output" "$target"
-    save_password_to_cache "$password"
   else
     rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -142,8 +95,7 @@ decompress_single(){
     mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
   fi
 
-  local cached_passwords=$(read_password_cache)
-  password=$(choose_password "$cached_passwords")
+  read -rp "请输入密码（留空则无密码）： " password
   echo
 
   if [[ -n "$password" ]]; then
@@ -173,8 +125,7 @@ decompress_split(){
     mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
   fi
 
-  local cached_passwords=$(read_password_cache)
-  password=$(choose_password "$cached_passwords")
+  read -rp "请输入密码（留空则无密码）： " password
   echo
 
   # 检测所有分卷文件
