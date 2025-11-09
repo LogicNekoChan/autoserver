@@ -47,7 +47,7 @@ compress_single(){
   read -rp "请输入密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 -m0 -rr5% -hp "$output_dir/$output" "$target"
+    rar a -p"$password" -ep1 -m3 -rr5% -hp "$output_dir/$output" "$target"
   else
     rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
@@ -70,7 +70,7 @@ compress_split(){
   read -rp "请输入密码（留空则无密码）： " password
   echo
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m0 -rr5% -hp "$output_dir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m3 -rr5% -hp "$output_dir/$output" "$target"
   else
     rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
   fi
