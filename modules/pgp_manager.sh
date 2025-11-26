@@ -149,21 +149,28 @@ encrypt(){
 # 解密单文件
 decrypt_single(){
     local file="$1" out="${file%.gpg}"
-    pv "$file" | gpg -d > "$out"
-    log "✅ 已解密：$out"
+    pv "$file" | gpg --batch --yes -d > "$out"
+    log "✅ 文件已解密：$out"
 }
 
-# 解密分卷
+
 decrypt_split(){
     local first="$1"
-    local base="$(echo "$first" | sed 's/\.part[0-9]\{3\}\.gpg$//')"
+    local base dir
+    dir=$(dirname "$first")
+    base=$(basename "$first" | sed 's/\.part[0-9]\{3\}\.gpg$//')
+
+    # 自动排序合并，并通过单次 GPG 授权解密所有分卷
+    log "🔐 正在一次性解密所有分卷..."
     {
-        for f in "$(dirname "$first")"/"$(basename "$base")".part*.gpg; do
-            gpg -d "$f"
+        for f in "$dir"/"$base".part*.gpg; do
+            cat "$f"
         done
-    } | pv | tar xzf -
-    log "✅ 分卷已解密并解包"
+    } | gpg --batch --yes -d | pv | tar xzf -
+
+    log "✅ 分卷已解密并解包（单次授权完成）"
 }
+
 
 # 自动识别
 decrypt_auto(){
@@ -174,6 +181,7 @@ decrypt_auto(){
         decrypt_single "$file"
     fi
 }
+
 
 ########## 8. 列出密钥 ##########
 list_keys(){
