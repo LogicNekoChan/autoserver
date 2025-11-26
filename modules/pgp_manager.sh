@@ -144,22 +144,21 @@ decrypt_single(){
 
 decrypt_split(){
     local first="$1"
-    local base dir temp_file parts
+    local dir base temp_file
     dir=$(dirname "$first")
     base=$(basename "$first" | sed 's/\.part.*\.gpg$//')
     temp_file="$dir/$base.tar.gz"
 
     shopt -s nullglob
-    parts=( "$dir/$base".part*.gpg )
-    [[ ${#parts[@]} -eq 0 ]] && { err "未找到任何分卷"; return 1; }
+    # 使用数组，避免空格问题
+    local parts=( "$dir/$base".part*.gpg )
+    [[ ${#parts[@]} -eq 0 ]] && { err "未找到分卷"; return 1; }
 
-    log "🔐 正在一次性解密所有分卷..."
     : > "$temp_file"
     for f in "${parts[@]}"; do
         gpg --batch --yes -d "$f" | pv >> "$temp_file"
     done
 
-    log "📦 正在解压..."
     tar xzf "$temp_file" -C "$dir"
     rm -f "$temp_file"
     log "✅ 分卷已解密并解包"
