@@ -144,16 +144,29 @@ decrypt_single(){
 
 decrypt_split(){
     local first="$1"
+    local dir base parts merged_file
+    dir=$(dirname "$first")
+    base=$(basename "$first" | sed 's/\.part.*$//')
+    merged_file="$dir/$base.merged.gpg"
 
-    local base="$(echo "$first" | sed 's/\.part[0-9][0-9][0-9]\.gpg$//')"
+    shopt -s nullglob
+    # 使用数组，确保空格不拆分
+    parts=( "$dir/$base".part* )
+    [[ ${#parts[@]} -eq 0 ]] && { err "未找到分卷"; return 1; }
 
-    # 自动排序合并
-    {
-        for f in "$(dirname "$first")"/"$(basename "$base")".part*.gpg; do
-            gpg -d "$f"
-        done
-    } | pv | tar xzf -
+    log "🔐 正在合并分卷..."
+    : > "$merged_file"
+    for f in "${parts[@]}"; do
+        cat "$f" >> "$merged_file"
+    done
+
+    log "📦 正在解密..."
+    gpg --batch --yes -d "$merged_file" | pv | tar xzf - -C "$dir"
+
+    rm -f "$merged_file"
+    log "✅ 分卷已解密并解包"
 }
+
 
 
 decrypt_auto(){
