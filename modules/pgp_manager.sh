@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v3.3（支持分卷+空格+边打包边加密+一次授权+公钥加密）
-# 默认分卷 2000MB
+# Ubuntu PGP 中文管家 v3.4（支持分卷/空格/中文/一次授权解密）
 # ==========================================
 set -euo pipefail
 
@@ -16,7 +15,7 @@ log()  { echo -e "${GREEN}[提示]${NC} $*"; }
 warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
 err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
-########## 读取路径（去引号+转绝对路径） ##########
+########## 路径读取 ##########
 read_path(){
     local _p
     read -rp "$1" _p
@@ -25,7 +24,7 @@ read_path(){
     realpath "$_p"
 }
 
-########## 邮箱校验 ##########
+########## 邮箱读取 ##########
 read_email(){
     local email
     while true; do
@@ -87,11 +86,10 @@ get_all_uids(){
 
 ########## 6. 加密 ##########
 encrypt(){
-    local target recipient idx basename out_dir split_mb split_bytes temp_file prefix
-
-    # 列出接收者
+    local target recipient idx basename out_dir split_mb temp_file merged_file
     mapfile -t keys < <(get_all_uids)
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
+
     echo -e "\n${BLUE}====== 本地公钥列表 ======${NC}"
     for i in "${!keys[@]}"; do printf " %2d) %s\n" $((i+1)) "${keys[i]}"; done
 
@@ -102,55 +100,46 @@ encrypt(){
     done
     recipient="${keys[$((idx-1))]}"
 
-    # 读取文件/目录
     target=$(read_path "请输入要加密的文件或目录：")
     basename=$(basename "$target")
 
-    # 输出目录
-    read -rp "加密输出目录（默认源目录）： " out_dir
+    read -rp "加密输出目录（直接回车使用源目录）： " out_dir
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
     mkdir -p "$out_dir"
 
-    # 分卷大小（默认2000MB）
-    read -rp "是否自定义分卷大小 MB（默认2000）： " split_mb
+    read -rp "是否分卷？输入 MB 大小（留空使用默认 2000MB）： " split_mb
     [[ -z "$split_mb" ]] && split_mb=2000
-    split_bytes="${split_mb}M"
 
-    # 临时加密文件
-    temp_file="$out_dir/${basename}.tar.gz.gpg"
+    temp_file="$(mktemp -u --suffix=.tar.gz)"
+    merged_file="$(mktemp -u --suffix=.gpg)"
 
-    # ---- 打包并公钥加密 ----
+    # 打包目录或文件
     if [[ -d "$target" ]]; then
-        tar -czf - -C "$(dirname "$target")" "$(basename "$target")" | pv \
-            | gpg -e -r "$recipient" -o "$temp_file"
+        tar -czf "$temp_file" -C "$(dirname "$target")" "$(basename "$target")"
     else
-        pv "$target" | gpg -e -r "$recipient" -o "$temp_file"
+        cp -a "$target" "$temp_file"
     fi
 
-    # ---- 分卷 ----
-    prefix="$out_dir/${basename}.part"
-    split -b "$split_bytes" "$temp_file" "$prefix"
+    # 一次性公钥加密
+    gpg -e -r "$recipient" -o "$merged_file" "$temp_file"
     rm -f "$temp_file"
+
+    # 分卷
+    split -b "${split_mb}M" "$merged_file" "${out_dir}/${basename}.part"
+    rm -f "$merged_file"
 
     log "✅ 分卷加密完成，存放在：$out_dir"
 }
 
 ########## 7. 解密 ##########
-decrypt_single(){
-    local file="$1" out="${file%.gpg}"
-    pv "$file" | gpg --batch --yes -d > "$out"
-    log "✅ 文件已解密：$out"
-}
-
 decrypt_split(){
     local first="$1"
-    local dir base parts merged_file
+    local dir base merged_file
     dir=$(dirname "$first")
     base=$(basename "$first" | sed 's/\.part.*$//')
-    merged_file="$dir/$base.merged.gpg"
+    merged_file="$(mktemp -u --suffix=.gpg)"
 
     shopt -s nullglob
-    # 使用数组，确保空格不拆分
     parts=( "$dir/$base".part* )
     [[ ${#parts[@]} -eq 0 ]] && { err "未找到分卷"; return 1; }
 
@@ -167,11 +156,16 @@ decrypt_split(){
     log "✅ 分卷已解密并解包"
 }
 
-
+decrypt_single(){
+    local file="$1"
+    local out="$file.decrypted"
+    gpg --batch --yes -d "$file" | pv > "$out"
+    log "✅ 文件已解密：$out"
+}
 
 decrypt_auto(){
     local file="$1"
-    if [[ "$file" =~ \.part.*\.gpg$ ]]; then
+    if [[ "$file" =~ \.part ]]; then
         decrypt_split "$file"
     else
         decrypt_single "$file"
@@ -186,9 +180,9 @@ list_keys(){
     gpg --list-secret-keys
 }
 
-########## 菜单循环 ##########
+########## 菜单 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v3.3 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v3.4 ========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
@@ -207,10 +201,7 @@ while true; do
         4) export_sec_key ;;
         5) delete_key ;;
         6) encrypt ;;
-        7)
-            f=$(read_path "请输入要解密的 .gpg 文件（支持分卷）：")
-            decrypt_auto "$f"
-            ;;
+        7) f=$(read_path "请输入要解密的 .gpg 文件（支持分卷）："); decrypt_auto "$f" ;;
         8) list_keys ;;
         9) log "bye~"; exit 0 ;;
         *) err "请输入有效数字 1-9" ;;
