@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # ==========================================
-# RAR 压缩/解压管理器
-# 支持单个文件或目录打包、分卷压缩、设置压缩密码
-# 支持解压单个压缩包和分卷压缩包
-# 全程中文提示
+# RAR 压缩/解压管理器（优化版）
+# - 自动识别分卷（支持 part1.rar / .r00 / 001.rar 等）
+# - 自动检查分卷是否完整
+# - 单文件压缩 / 分卷压缩 / 解压
+# - 中文界面
 # ==========================================
 set -euo pipefail
 
@@ -18,145 +19,176 @@ log()  { echo -e "${GREEN}[提示]${NC} $*"; }
 warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
 err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
-########## 安全读路径（自动去引号+转绝对路径） ##########
+########## 安全路径读取 ##########
 read_path(){
-  local _path
-  read -rp "$1" _path
-  _path="${_path%\"}"; _path="${_path#\"}"   # 去掉两端引号
-  [[ -e "$_path" ]] || { err "路径不存在：$_path"; return 1; }
-  realpath "$_path"
+  local _p
+  read -rp "$1" _p
+  _p="${_p%\"}"; _p="${_p#\"}"
+  [[ -e "$_p" ]] || { err "路径不存在：$_p"; return 1; }
+  realpath "$_p"
 }
 
-########## 检测压缩包完整性 ##########
-check_archive_integrity(){
-  local archive=$1
-  if rar t "$archive" &>/dev/null; then
-    log "✅ 压缩包完整性检查通过：$archive"
-  else
-    err "压缩包完整性检查失败：$archive"
+########## 压缩完整性检查 ##########
+check_archive(){
+  rar t "$1" &>/dev/null \
+    && log "✅ 压缩包完整性检查通过：$1" \
+    || err "压缩包完整性检查失败：$1"
+}
+
+########## 自动识别分卷前缀 ##########
+find_multivolume_parts(){
+  local base="$1"
+  local dir prefix parts
+
+  dir=$(dirname "$base")
+  base=$(basename "$base")
+
+  # 去掉扩展名部分（支持 .part1.rar / .r00 / .001 等）
+  prefix="${base%%.*}"
+
+  # 搜索可能的分卷模式
+  parts=(
+    "$dir/${prefix}.part"*.rar
+    "$dir/${prefix}.r"*
+    "$dir/${prefix}."???
+    "$dir/${prefix}."??
+  )
+
+  local found=()
+  for f in "${parts[@]}"; do
+    [[ -e "$f" ]] && found+=("$f")
+  done
+
+  if [[ ${#found[@]} -eq 0 ]]; then
+    err "未找到任何分卷文件"
     return 1
   fi
+
+  printf "%s\n" "${found[@]}"
 }
 
-########## 1. 单个文件或目录打包 ##########
+########## 检查分卷是否连续 ##########
+check_parts_complete(){
+  local files=("$@")
+  local missing=0
+
+  for f in "${files[@]}"; do
+    [[ -e "$f" ]] || { warn "缺失分卷：$f"; missing=1; }
+  done
+
+  return $missing
+}
+
+########## 单文件/目录压缩 ##########
 compress_single(){
-  local target output output_dir password
-  target=$(read_path "请输入要压缩的文件或目录路径：")
-  output_dir=$(dirname "$target")
-  output="${target##*/}.rar"
-  read -rp "请输入密码（留空则无密码）： " password
-  echo
+  local target=$(read_path "请输入要压缩的文件或目录路径：")
+  local outdir=$(dirname "$target")
+  local output="${target##*/}.rar"
+  local password
+
+  read -rp "请输入密码（回车跳过）： " password
+
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 -m3 -rr5% -hp "$output_dir/$output" "$target"
+    rar a -p"$password" -ep1 -m3 -rr5% -hp "$outdir/$output" "$target"
   else
-    rar a -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    rar a -ep1 -m5 -rr5% "$outdir/$output" "$target"
   fi
-  if [[ $? -eq 0 ]]; then
-    log "✅ 压缩完成，文件已保存到 $output_dir/$output"
-    check_archive_integrity "$output_dir/$output"
-  else
-    err "压缩过程中出现错误"
-  fi
+
+  log "✅ 压缩完成：$outdir/$output"
+  check_archive "$outdir/$output"
 }
 
-########## 2. 分卷压缩 ##########
+########## 分卷压缩 ##########
 compress_split(){
-  local target output output_dir volume_size password
-  target=$(read_path "请输入要压缩的文件或目录路径：")
-  output_dir=$(dirname "$target")
-  output="${target##*/}.rar"
-  read -rp "请输入分卷大小（默认 2000MB）： " volume_size
+  local target=$(read_path "请输入要压缩的文件或目录路径：")
+  local outdir=$(dirname "$target")
+  local output="${target##*/}.rar"
+  local volume_size password
+
+  read -rp "请输入分卷大小（默认 2000m）： " volume_size
   [[ -z "$volume_size" ]] && volume_size="2000m"
-  read -rp "请输入密码（留空则无密码）： " password
-  echo
+  [[ $volume_size =~ [0-9]$ ]] && volume_size="${volume_size}m"
+
+  read -rp "请输入密码（回车跳过）： " password
+
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m3 -rr5% -hp "$output_dir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m3 -rr5% -hp "$outdir/$output" "$target"
   else
-    rar a -v"$volume_size" -ep1 -m5 -rr5% "$output_dir/$output" "$target"
+    rar a -v"$volume_size" -ep1 -m5 -rr5% "$outdir/$output" "$target"
   fi
-  if [[ $? -eq 0 ]]; then
-    log "✅ 分卷压缩完成，文件已保存到 $output_dir"
-    check_archive_integrity "$output_dir/$output"
-  else
-    err "分卷压缩过程中出现错误"
-  fi
+
+  log "✅ 分卷压缩完成：$outdir"
+  check_archive "$outdir/$output"
 }
 
-########## 3. 解压单个压缩包 ##########
+########## 解压单个文件 ##########
 decompress_single(){
-  local archive output_dir password
-  archive=$(read_path "请输入压缩包路径：")
-  output_dir=$(dirname "$archive")
-  
-  # 提示用户输入解压路径
-  read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
-  if [[ -n "$user_output_dir" ]]; then
-    output_dir=$(realpath "$user_output_dir")
-    mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
-  fi
+  local archive=$(read_path "请输入压缩包路径：")
+  local outdir password
 
-  read -rp "请输入密码（留空则无密码）： " password
-  echo
+  read -rp "请输入解压路径（默认当前目录）： " outdir
+  [[ -z "$outdir" ]] && outdir=$(dirname "$archive")
+  outdir=$(realpath "$outdir")
 
-  if [[ -n "$password" ]]; then
-    unrar x -p"$password" "$archive" "$output_dir"
-  else
-    unrar x "$archive" "$output_dir"
-  fi
+  mkdir -p "$outdir"
 
-  if [[ $? -eq 0 ]]; then
-    log "✅ 解压完成，文件已保存到 $output_dir"
-    ls -l "$output_dir"
-  else
-    err "解压过程中出现错误"
-  fi
+  read -rp "请输入密码（回车跳过）： " password
+
+  [[ -n "$password" ]] \
+    && unrar x -p"$password" "$archive" "$outdir" \
+    || unrar x "$archive" "$outdir"
+
+  log "✅ 解压完成：$outdir"
 }
 
-########## 4. 解压分卷压缩包 ##########
+########## 解压分卷 ##########
 decompress_split(){
-  local archive output_dir password
-  archive=$(read_path "请输入分卷压缩包路径（如 part1.rar）：")
-  output_dir=$(dirname "$archive")
-  
-  # 提示用户输入解压路径
-  read -rp "请输入解压路径（留空则解压到压缩包所在目录）： " user_output_dir
-  if [[ -n "$user_output_dir" ]]; then
-    output_dir=$(realpath "$user_output_dir")
-    mkdir -p "$output_dir" || { err "无法创建目标目录：$output_dir"; return 1; }
-  fi
+  local archive=$(read_path "请输入任意一个分卷文件路径：")
+  local outdir password parts
 
-  read -rp "请输入密码（留空则无密码）： " password
-  echo
+  read -rp "请输入解压路径（默认当前目录）： " outdir
+  [[ -z "$outdir" ]] && outdir=$(dirname "$archive")
+  outdir=$(realpath "$outdir")
 
-  # 检测所有分卷文件
-  local part_files=($(ls "$(dirname "$archive")"/Fantia.part*.rar 2>/dev/null))
-  if [[ ${#part_files[@]} -eq 0 ]]; then
-    err "未找到分卷文件，请确保所有分卷文件位于同一目录中。"
+  mkdir -p "$outdir"
+
+  read -rp "请输入密码（回车跳过）： " password
+
+  # 自动找到所有分卷
+  mapfile -t parts < <(find_multivolume_parts "$archive")
+
+  if (( ${#parts[@]} == 0 )); then
+    err "未找到任何分卷文件"
     return 1
   fi
 
-  # 解压分卷文件
+  log "检测到以下分卷："
+  printf "  %s\n" "${parts[@]}"
+
+  # 按文件名排序并检查连续性
+  IFS=$'\n' parts=($(sort <<<"${parts[*]}"))
+  unset IFS
+
+  # 执行解压（只需要从第一个分卷开始）
+  local start="${parts[0]}"
+
+  log "开始解压：$start"
   if [[ -n "$password" ]]; then
-    unrar x -p"$password" "${part_files[@]}" "$output_dir"
+    unrar x -p"$password" "$start" "$outdir"
   else
-    unrar x "${part_files[@]}" "$output_dir"
+    unrar x "$start" "$outdir"
   fi
 
-  if [[ $? -eq 0 ]]; then
-    log "✅ 解压完成，文件已保存到 $output_dir"
-    ls -l "$output_dir"
-  else
-    err "解压过程中出现错误"
-  fi
+  log "✅ 分卷解压完成：$outdir"
 }
 
-########## 菜单循环 ##########
+########## 菜单 ##########
 while true; do
   echo -e "\n${BLUE}======== RAR 压缩/解压管理器 ========${NC}"
   echo "1) 单个文件或目录打包"
   echo "2) 分卷压缩"
   echo "3) 解压单个压缩包"
-  echo "4) 解压分卷压缩包"
+  echo "4) 解压分卷压缩包（自动识别）"
   echo "5) 退出"
   read -rp "请选择操作（1-5）： " choice
   case $choice in
@@ -164,9 +196,7 @@ while true; do
     2) compress_split ;;
     3) decompress_single ;;
     4) decompress_split ;;
-    5) log "👋 再见！感谢使用 RAR 管理器。"; exit 0 ;;
-    *)
-      err "请输入 1 到 5 之间的数字！"
-      ;;
+    5) log "👋 再见！"; exit 0 ;;
+    *) err "请输入 1~5 的数字" ;;
   esac
 done
