@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v3.0（支持分卷+空格+边打包边加密）
+# Ubuntu PGP 中文管家 v3.1（支持分卷+空格+边打包边加密+一次授权解密所有分卷）
 # ==========================================
 set -euo pipefail
 
@@ -138,7 +138,9 @@ encrypt(){
     fi
 
     # 加密分卷
-    for p in "$prefix"*; do
+    shopt -s nullglob
+    parts=( "$prefix"* )
+    for p in "${parts[@]}"; do
         gpg -e -r "$recipient" -o "${p}.gpg" "$p"
         rm -f "$p"
     done
@@ -153,35 +155,39 @@ decrypt_single(){
     log "✅ 文件已解密：$out"
 }
 
-
+# 分卷解密
 decrypt_split(){
     local first="$1"
-    local base dir
+    local base dir combined parts
     dir=$(dirname "$first")
-    base=$(basename "$first" | sed 's/\.part[0-9]\{3\}\.gpg$//')
+    base=$(basename "$first" | sed 's/\.part[a-z][a-z]\.gpg$//')
+    combined="$dir/$base.tar.gz"
 
-    # 自动排序合并，并通过单次 GPG 授权解密所有分卷
-    log "🔐 正在一次性解密所有分卷..."
-    {
-        for f in "$dir"/"$base".part*.gpg; do
-            cat "$f"
-        done
-    } | gpg --batch --yes -d | pv | tar xzf -
+    shopt -s nullglob
+    parts=( "$dir/$base".part*.gpg )
+    [[ ${#parts[@]} -eq 0 ]] && { err "未找到任何分卷"; return 1; }
 
-    log "✅ 分卷已解密并解包（单次授权完成）"
+    log "🔐 正在依次解密所有分卷..."
+    : > "$combined"
+    for f in "${parts[@]}"; do
+        gpg -d "$f" | pv >> "$combined"
+    done
+
+    log "📦 正在解压..."
+    tar xzf "$combined" -C "$dir"
+    rm -f "$combined"
+    log "✅ 分卷已解密并解包"
 }
-
 
 # 自动识别
 decrypt_auto(){
     local file="$1"
-    if [[ "$file" =~ \.part[0-9]{3}\.gpg$ ]]; then
+    if [[ "$file" =~ \.part[a-z][a-z]\.gpg$ ]]; then
         decrypt_split "$file"
     else
         decrypt_single "$file"
     fi
 }
-
 
 ########## 8. 列出密钥 ##########
 list_keys(){
@@ -193,7 +199,7 @@ list_keys(){
 
 ########## 菜单循环 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v3.0 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v3.1 ========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
@@ -212,10 +218,10 @@ while true; do
         4) export_sec_key ;;
         5) delete_key ;;
         6) encrypt ;;
-        7) 
-           f=$(read_path "请输入要解密的 .gpg 文件（支持分卷）：")
-           decrypt_auto "$f"
-           ;;
+        7)
+            f=$(read_path "请输入要解密的 .gpg 文件（支持分卷）：")
+            decrypt_auto "$f"
+            ;;
         8) list_keys ;;
         9) log "bye~"; exit 0 ;;
         *) err "请输入有效数字 1-9" ;;
