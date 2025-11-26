@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v3.1（支持分卷+空格+边打包边加密+一次授权解密所有分卷）
+# Ubuntu PGP 中文管家 v3.2（支持分卷+空格+边打包边加密+一次授权+公钥加密）
+# 默认分卷 2000MB
 # ==========================================
 set -euo pipefail
 
@@ -86,15 +87,14 @@ get_all_uids(){
 
 ########## 6. 加密 ##########
 encrypt(){
-    local target recipient idx n basename split_mb prefix out_dir
+    local target recipient idx basename out_dir split_mb split_bytes temp_file prefix parts
 
-    # 列出可选接收者
+    # 列出接收者
     mapfile -t keys < <(get_all_uids)
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
     echo -e "\n${BLUE}====== 本地公钥列表 ======${NC}"
     for i in "${!keys[@]}"; do printf " %2d) %s\n" $((i+1)) "${keys[i]}"; done
 
-    # 选择接收者
     while true; do
         read -rp "请选择接收者编号（1-${#keys[@]}）： " idx
         [[ "$idx" =~ ^[0-9]+$ ]] && (( idx>=1 && idx<=${#keys[@]} )) && break
@@ -102,87 +102,72 @@ encrypt(){
     done
     recipient="${keys[$((idx-1))]}"
 
-    # 读取文件或目录
+    # 读取文件/目录
     target=$(read_path "请输入要加密的文件或目录：")
     basename=$(basename "$target")
 
-    # 选择输出目录
-    read -rp "加密输出目录（直接回车使用源目录）： " out_dir
+    # 输出目录
+    read -rp "加密输出目录（默认源目录）： " out_dir
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
     mkdir -p "$out_dir"
 
-    # 是否分卷
-    read -rp "是否分卷？输入 MB 大小（留空表示不分卷）： " split_mb
+    # 分卷大小（默认2000MB）
+    read -rp "是否自定义分卷大小 MB（默认2000）： " split_mb
+    [[ -z "$split_mb" ]] && split_mb=2000
+    split_bytes="${split_mb}M"
 
-    # ---- 普通单文件或目录加密 ----
-    if [[ -z "$split_mb" ]]; then
-        if [[ -d "$target" ]]; then
-            tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
-                | pv | gpg -e -r "$recipient" -o "${out_dir}/${basename}.tar.gz.gpg"
-            log "✅ 已生成：${out_dir}/${basename}.tar.gz.gpg"
-        else
-            pv "$target" | gpg -e -r "$recipient" -o "${out_dir}/${basename}.gpg"
-            log "✅ 已生成：${out_dir}/${basename}.gpg"
-        fi
-        return
-    fi
+    # 临时文件
+    temp_file="$out_dir/${basename}.tar.gz.gpg"
 
-    # ---- 分卷加密 ----
-    split_mb_bytes="${split_mb}M"
-    prefix="${out_dir}/${basename}.part"
+    # ---- 打包并公钥加密 ----
     if [[ -d "$target" ]]; then
-        tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
-            | pv | split -b "$split_mb_bytes" - "$prefix"
+        tar -czf - -C "$(dirname "$target")" "$(basename "$target")" | pv \
+            | gpg -e -r "$recipient" -o "$temp_file"
     else
-        split -b "$split_mb_bytes" "$target" "$prefix"
+        pv "$target" | gpg -e -r "$recipient" -o "$temp_file"
     fi
 
-    # 加密分卷
-    shopt -s nullglob
-    parts=( "$prefix"* )
-    for p in "${parts[@]}"; do
-        gpg -e -r "$recipient" -o "${p}.gpg" "$p"
-        rm -f "$p"
-    done
+    # ---- 分卷 ----
+    prefix="$out_dir/${basename}.part"
+    split -b "$split_bytes" "$temp_file" "$prefix"
+    rm -f "$temp_file"
+
     log "✅ 分卷加密完成，存放在：$out_dir"
 }
 
 ########## 7. 解密 ##########
-# 解密单文件
 decrypt_single(){
     local file="$1" out="${file%.gpg}"
     pv "$file" | gpg --batch --yes -d > "$out"
     log "✅ 文件已解密：$out"
 }
 
-# 分卷解密
 decrypt_split(){
     local first="$1"
-    local base dir combined parts
+    local base dir temp_file parts
     dir=$(dirname "$first")
-    base=$(basename "$first" | sed 's/\.part[a-z][a-z]\.gpg$//')
-    combined="$dir/$base.tar.gz"
+    base=$(basename "$first" | sed 's/\.part.*\.gpg$//')
+    temp_file="$dir/$base.tar.gz"
 
     shopt -s nullglob
     parts=( "$dir/$base".part*.gpg )
     [[ ${#parts[@]} -eq 0 ]] && { err "未找到任何分卷"; return 1; }
 
-    log "🔐 正在依次解密所有分卷..."
-    : > "$combined"
+    log "🔐 正在一次性解密所有分卷..."
+    : > "$temp_file"
     for f in "${parts[@]}"; do
-        gpg -d "$f" | pv >> "$combined"
+        gpg --batch --yes -d "$f" | pv >> "$temp_file"
     done
 
     log "📦 正在解压..."
-    tar xzf "$combined" -C "$dir"
-    rm -f "$combined"
+    tar xzf "$temp_file" -C "$dir"
+    rm -f "$temp_file"
     log "✅ 分卷已解密并解包"
 }
 
-# 自动识别
 decrypt_auto(){
     local file="$1"
-    if [[ "$file" =~ \.part[a-z][a-z]\.gpg$ ]]; then
+    if [[ "$file" =~ \.part.*\.gpg$ ]]; then
         decrypt_split "$file"
     else
         decrypt_single "$file"
@@ -199,13 +184,13 @@ list_keys(){
 
 ########## 菜单循环 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v3.1 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v3.2 ========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
-    echo "6) 加密（支持目录/分卷）"
+    echo "6) 加密（支持目录/分卷，默认2000MB）"
     echo "7) 解密（自动识别分卷）"
     echo "8) 查看已有密钥"
     echo "9) 退出"
