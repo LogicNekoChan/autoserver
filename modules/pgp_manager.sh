@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v3.2（支持分卷+空格+边打包边加密+一次授权+公钥加密）
+# Ubuntu PGP 中文管家 v3.3（支持分卷+空格+边打包边加密+一次授权+公钥加密）
 # 默认分卷 2000MB
 # ==========================================
 set -euo pipefail
@@ -87,7 +87,7 @@ get_all_uids(){
 
 ########## 6. 加密 ##########
 encrypt(){
-    local target recipient idx basename out_dir split_mb split_bytes temp_file prefix parts
+    local target recipient idx basename out_dir split_mb split_bytes temp_file prefix
 
     # 列出接收者
     mapfile -t keys < <(get_all_uids)
@@ -116,7 +116,7 @@ encrypt(){
     [[ -z "$split_mb" ]] && split_mb=2000
     split_bytes="${split_mb}M"
 
-    # 临时文件
+    # 临时加密文件
     temp_file="$out_dir/${basename}.tar.gz.gpg"
 
     # ---- 打包并公钥加密 ----
@@ -144,21 +144,23 @@ decrypt_single(){
 
 decrypt_split(){
     local first="$1"
-    local dir base temp_file
+    local dir base temp_file parts
     dir=$(dirname "$first")
     base=$(basename "$first" | sed 's/\.part.*\.gpg$//')
     temp_file="$dir/$base.tar.gz"
 
     shopt -s nullglob
-    # 使用数组，避免空格问题
-    local parts=( "$dir/$base".part*.gpg )
+    # 使用数组，确保空格不会报错
+    parts=( "$dir/$base".part*.gpg )
     [[ ${#parts[@]} -eq 0 ]] && { err "未找到分卷"; return 1; }
 
+    log "🔐 正在一次性解密所有分卷..."
     : > "$temp_file"
     for f in "${parts[@]}"; do
         gpg --batch --yes -d "$f" | pv >> "$temp_file"
     done
 
+    log "📦 正在解压..."
     tar xzf "$temp_file" -C "$dir"
     rm -f "$temp_file"
     log "✅ 分卷已解密并解包"
@@ -183,7 +185,7 @@ list_keys(){
 
 ########## 菜单循环 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v3.2 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v3.3 ========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
