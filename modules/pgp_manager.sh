@@ -86,7 +86,7 @@ get_all_uids(){
 
 ########## 6. 加密 ##########
 encrypt(){
-    local target recipient idx n basename split_mb prefix
+    local target recipient idx n basename split_mb prefix out_dir
 
     # 列出可选接收者
     mapfile -t keys < <(get_all_uids)
@@ -106,6 +106,11 @@ encrypt(){
     target=$(read_path "请输入要加密的文件或目录：")
     basename=$(basename "$target")
 
+    # 选择输出目录
+    read -rp "加密输出目录（直接回车使用源目录）： " out_dir
+    [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
+    mkdir -p "$out_dir"
+
     # 是否分卷
     read -rp "是否分卷？输入 MB 大小（留空表示不分卷）： " split_mb
 
@@ -113,18 +118,18 @@ encrypt(){
     if [[ -z "$split_mb" ]]; then
         if [[ -d "$target" ]]; then
             tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
-                | pv | gpg -e -r "$recipient" -o "${basename}.tar.gz.gpg"
-            log "✅ 已生成：${basename}.tar.gz.gpg"
+                | pv | gpg -e -r "$recipient" -o "${out_dir}/${basename}.tar.gz.gpg"
+            log "✅ 已生成：${out_dir}/${basename}.tar.gz.gpg"
         else
-            pv "$target" | gpg -e -r "$recipient" -o "${basename}.gpg"
-            log "✅ 已生成：${basename}.gpg"
+            pv "$target" | gpg -e -r "$recipient" -o "${out_dir}/${basename}.gpg"
+            log "✅ 已生成：${out_dir}/${basename}.gpg"
         fi
         return
     fi
 
     # ---- 分卷加密 ----
     split_mb_bytes="${split_mb}M"
-    prefix="${basename}.part"
+    prefix="${out_dir}/${basename}.part"
     if [[ -d "$target" ]]; then
         tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
             | pv | split -b "$split_mb_bytes" - "$prefix"
@@ -137,7 +142,7 @@ encrypt(){
         gpg -e -r "$recipient" -o "${p}.gpg" "$p"
         rm -f "$p"
     done
-    log "✅ 分卷加密完成：${prefix}XXX.gpg"
+    log "✅ 分卷加密完成，存放在：$out_dir"
 }
 
 ########## 7. 解密 ##########
