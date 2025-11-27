@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v3.4（优化版 - 支持空格/不签名/一次授权解密）
+# Ubuntu PGP 中文管家 v3.6（压缩优化版 - 支持文件/目录加密，目录使用 Gzip 压缩）
 # ==========================================
 set -euo pipefail
 
 ########## 依赖检查 ##########
-for cmd in gpg tar pv split realpath; do
+for cmd in gpg tar pv realpath; do
   command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install gnupg tar pv coreutils"; exit 1; }
 done
 
@@ -16,7 +16,6 @@ warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
 err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
 ########## 路径读取 ##########
-# 注意：realpath "$_p" 的输出已正确处理了路径中的空格
 read_path(){
     local _p
     read -rp "$1" _p
@@ -42,7 +41,6 @@ create_key(){ gpg --full-generate-key; }
 import_key(){
     local asc
     asc=$(read_path "请输入密钥文件路径：") || return 1
-    # 优化点：引用 $asc
     gpg --import "$asc"
     log "✅ 已导入"
 }
@@ -53,7 +51,6 @@ export_pub_key(){
     email=$(read_email "请输入要导出的邮箱：")
     read -rp "保存为（默认 ${email}_pub.asc）： " out
     [[ -z "$out" ]] && out="${email}_pub.asc"
-    # 优化点：引用 $out
     gpg --armor --export "$email" > "$out"
     log "✅ 公钥已导出：$(realpath "$out")"
 }
@@ -67,7 +64,6 @@ export_sec_key(){
     [[ "$c" != "yes" ]] && { warn "已取消"; return; }
     read -rp "保存为（默认 ${email}_sec.asc）： " out
     [[ -z "$out" ]] && out="${email}_sec.asc"
-    # 优化点：引用 $out
     gpg --armor --export-secret-keys "$email" > "$out"
     log "⚠️ 私钥已导出：$(realpath "$out")"
 }
@@ -91,7 +87,7 @@ get_all_uids(){
 
 ########## 6. 加密 ##########
 encrypt(){
-    local target recipient idx basename out_dir split_mb temp_file merged_file
+    local target recipient idx basename out_dir out_file temp_file target_to_encrypt
     mapfile -t keys < <(get_all_uids)
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
 
@@ -110,33 +106,31 @@ encrypt(){
 
     read -rp "加密输出目录（直接回车使用源目录）： " out_dir
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
-    # 优化点：引用 $out_dir
     mkdir -p "$out_dir"
-
-    read -rp "是否分卷？输入 MB 大小（留空使用默认 2000MB）： " split_mb
-    [[ -z "$split_mb" ]] && split_mb=2000
-
-    temp_file="$(mktemp -u --suffix=.tar.gz)"
-    merged_file="$(mktemp -u --suffix=.gpg)"
-
-    # 打包目录或文件 (优化点：引用 $temp_file 和 $target)
+    
+    # 如果加密的是目录，先打包成 .tar.gz (带 Gzip 压缩，压缩效果好)
     if [[ -d "$target" ]]; then
+        temp_file="$(mktemp -u --suffix=.tar.gz)" # 使用 .tar.gz 
+        out_file="${out_dir}/${basename}.tar.gz.gpg" # 输出文件名带 .tar.gz 提示接收方
+        log "📦 正在打包目录 (启用 Gzip 压缩)..."
+        # 使用 tar -czf (带 z) 
         tar -czf "$temp_file" -C "$(dirname "$target")" "$(basename "$target")"
+        target_to_encrypt="$temp_file"
     else
-        cp -a "$target" "$temp_file"
+        # 加密文件
+        out_file="${out_dir}/${basename}.gpg"
+        target_to_encrypt="$target"
     fi
 
-    # 一次性公钥加密 (优化点：引用 $merged_file 和 $temp_file)
+    # 公钥加密
     log "🔐 正在加密..."
-    gpg --no-sign -e -r "$recipient" -o "$merged_file" "$temp_file"
-    rm -f "$temp_file"
+    pv "$target_to_encrypt" | gpg --no-sign -e -r "$recipient" -o "$out_file"
 
-    # 分卷 (优化点：引用 $merged_file 和 $out_dir/${basename})
-    log "✂️ 正在分卷..."
-    split -b "${split_mb}M" "$merged_file" "${out_dir}/${basename}.part"
-    rm -f "$merged_file"
+    # 清理临时文件
+    [[ -v temp_file ]] && rm -f "$temp_file"
 
-    log "✅ 分卷加密完成，存放在：$out_dir"
+    log "✅ 加密完成，文件存放在：$(realpath "$out_file")"
+    [[ -d "$target" ]] && log "📢 提醒：您加密的是目录，接收方在 Windows 上解密后会得到一个 **.tar.gz** 文件，需要手动解压一次。"
 }
 
 ########## 解密的核心函数 ##########
@@ -150,60 +144,35 @@ decrypt_core(){
     read -rs pass
     echo # 换行
 
-    # 优化点：引用 $input_file，并传递密码给 GPG
+    # 传递密码给 GPG，并通过 pipe 交给 output_action 处理
     echo "$pass" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -d "$input_file" | eval "$output_action"
 
     [[ $? -ne 0 ]] && { err "解密失败，密码错误或文件已损坏。"; return 1; }
 }
 
-########## 7. 解密 - 分卷 ##########
-decrypt_split(){
-    local first="$1"
-    local dir base merged_file
-    dir=$(dirname "$first")
-    base=$(basename "$first" | sed 's/\.part.*$//')
-    merged_file="$(mktemp -u --suffix=.gpg)"
-
-    # 优化点：在 glob 匹配中引用路径 (虽然 nullglob 已经提升了安全性，但双引号保险)
-    shopt -s nullglob
-    parts=( "$dir/$base".part* )
-    [[ ${#parts[@]} -eq 0 ]] && { err "未找到分卷"; return 1; }
-
-    log "🔐 正在合并分卷..."
-    : > "$merged_file"
-    # 优化点：在 cat 命令中引用 $f
-    for f in "${parts[@]}"; do
-        cat "$f" >> "$merged_file"
-    done
-
-    log "📦 正在解密并解包..."
-    # 调用核心解密函数，并确保 tar 解包目录 $dir 被引用
-    decrypt_core "$merged_file" 'pv | tar xzf - -C "$dir"' || return 1
-
-    rm -f "$merged_file"
-    log "✅ 分卷已解密并解包"
-}
-
-########## 7. 解密 - 单文件 ##########
-decrypt_single(){
+########## 7. 解密 ##########
+decrypt(){
     local file="$1"
-    # 优化点：构造输出文件名时引用 $file
-    local out="$file.decrypted"
+    local out dir basename
+    dir=$(dirname "$file")
+    basename=$(basename "$file" .gpg)
 
     log "📦 正在解密..."
-    # 调用核心解密函数，并确保输出文件 $out 被引用
-    decrypt_core "$file" 'pv > "$out"' || return 1
-
-    log "✅ 文件已解密：$out"
-}
-
-########## 7. 解密 - 自动判断 ##########
-decrypt_auto(){
-    local file="$1"
-    if [[ "$file" =~ \.part ]]; then
-        decrypt_split "$file"
+    
+    # 判断解密输出是否为 .tar.gz 包 (用于解密目录的情况)
+    if [[ "$basename" =~ \.tar\.gz$ ]]; then
+        # 解密并解包目录
+        log "💡 检测到 .tar.gz 格式 (压缩目录)，正在解包到 $dir..."
+        # 调用核心解密函数，并确保 tar 解包目录 $dir 被引用
+        # 使用 tar xzf (带 z) 来解压压缩的 tar.gz 文件
+        decrypt_core "$file" 'pv | tar xzf - -C "$dir"' || return 1
+        log "✅ 文件已解密并解包"
     else
-        decrypt_single "$file"
+        # 解密单个文件
+        out="${file%.gpg}.decrypted"
+        # 调用核心解密函数，并确保输出文件 $out 被引用
+        decrypt_core "$file" 'pv > "$out"' || return 1
+        log "✅ 文件已解密：$(realpath "$out")"
     fi
 }
 
@@ -217,13 +186,13 @@ list_keys(){
 
 ########## 菜单 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v3.4 优化版 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v3.6 压缩优化版 ========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
-    echo "6) 加密（分卷/目录，不签名）"
+    echo "6) 加密（文件/目录，高压缩率）"
     echo "7) 解密（自动识别，一次授权）"
     echo "8) 查看已有密钥"
     echo "9) 退出"
@@ -236,10 +205,9 @@ while true; do
         4) export_sec_key ;;
         5) delete_key ;;
         6) encrypt ;;
-        7) 
-            # 优化点：在调用 decrypt_auto 时引用 $f，防止路径空格导致参数分裂
-            f=$(read_path "请输入要解密的 .gpg 文件（支持分卷）：") || continue
-            decrypt_auto "$f" 
+        7) 
+            f=$(read_path "请输入要解密的 .gpg 文件：") || continue
+            decrypt "$f" 
             ;;
         8) list_keys ;;
         9) log "bye~"; exit 0 ;;
