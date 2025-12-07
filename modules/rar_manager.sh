@@ -89,9 +89,9 @@ compress_single(){
   read -rp "请输入密码（回车跳过）： " password
 
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -ep1 -m3 -rr5% -hp "$outdir/$output" "$target"
+    rar a -p"$password" -ep1 -m3 -rr3% -hp "$outdir/$output" "$target"
   else
-    rar a -ep1 -m5 -rr5% "$outdir/$output" "$target"
+    rar a -ep1 -m3 -rr3% "$outdir/$output" "$target"
   fi
 
   log "✅ 压缩完成：$outdir/$output"
@@ -103,18 +103,15 @@ compress_split(){
   local target=$(read_path "请输入要压缩的文件或目录路径：")
   local outdir=$(dirname "$target")
   local output="${target##*/}.rar"
-  local volume_size password
-
-  read -rp "请输入分卷大小（默认 2000m）： " volume_size
-  [[ -z "$volume_size" ]] && volume_size="2000m"
-  [[ $volume_size =~ [0-9]$ ]] && volume_size="${volume_size}m"
+  local volume_size="2000m" # 默认分卷大小为2000MB
+  local password
 
   read -rp "请输入密码（回车跳过）： " password
 
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m3 -rr5% -hp "$outdir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr3% -hp "$outdir/$output" "$target"
   else
-    rar a -v"$volume_size" -ep1 -m5 -rr5% "$outdir/$output" "$target"
+    rar a -v"$volume_size" -ep1 -m5 -rr3% "$outdir/$output" "$target"
   fi
 
   log "✅ 分卷压缩完成：$outdir"
