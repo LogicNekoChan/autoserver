@@ -92,9 +92,9 @@ list_keys(){
     gpg --list-secret-keys
 }
 
-########## 加密（不分卷 / 自动压缩目录） ##########
+########## 加密（不分卷 / 自动压缩目录 / 实时进度条） ##########
 encrypt(){
-    local target recipient idx basename out_dir temp_file final_path
+    local target recipient idx basename out_dir temp_file final_path total_size
     mapfile -t keys < <(get_all_uids)
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
 
@@ -117,17 +117,22 @@ encrypt(){
 
     temp_file="$(mktemp -u)"
 
-    # 目录打包 | 单文件复用
+    # 1. 目录打包 | 单文件复用
     if [[ -d "$target" ]]; then
+        # 计算总字节，用于 pv 进度条
+        total_size=$(du -sb "$target" | awk '{print $1}')
         temp_file+=".tar.gz"
-        log "📦 正在打包目录 (Gzip 压缩)..."
-        tar -czf "$temp_file" -C "$(dirname "$target")" "$(basename "$target")"
+        log "📦 正在打包目录 (Gzip 压缩，带进度条)..."
+        # tar -> pv -> gzip  实时显示已写入字节
+        tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
+          | pv -s "$total_size" \
+          | gzip > "$temp_file"
     else
         log "🔄 复制文件到临时位置..."
         cp -a "$target" "$temp_file"
     fi
 
-    # 一次性加密
+    # 2. 一次性加密
     final_path="${out_dir}/${basename}$([[ -d "$target" ]] && echo ".tar.gz").gpg"
     log "🔐 正在加密..."
     pv "$temp_file" | gpg --no-sign -e -r "$recipient" -o "$final_path"
