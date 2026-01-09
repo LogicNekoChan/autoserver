@@ -133,7 +133,7 @@ encrypt(){
     # 2. 一次性加密
     final_path="${out_dir}/${basename}$([[ -d "$target" ]] && echo ".tar.gz").gpg"
     log "🔐 正在加密..."
-    pv "$temp_file" | gpg --no-sign -e -r "$recipient" -o "$final_path"
+    pv "$temp_file" | gpg -e -r "$recipient" -o "$final_path"
 
     rm -f "$temp_file"
     log "✅ 加密完成：$(realpath "$final_path")"
