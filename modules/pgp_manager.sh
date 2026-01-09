@@ -5,27 +5,37 @@
 # 严格模式：遇到错误即退出，防止脚本继续运行
 set -euo pipefail
 
-########## 依赖检查 ##########
-# 重新引入 split 依赖
-for cmd in gpg tar pv split realpath; do
-    command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install gnupg tar pv coreutils"; exit 1; }
+########## 依赖检查 + 自动安装 ##########
+# 需要校验的命令列表
+DEPS=(gpg tar pv split realpath)
+MISS=()          # 待补装的包名
+
+# 把命令→包名做映射，确保只装最小的包
+declare -A CMD2PKG=(
+    [gpg]=gnupg
+    [tar]=tar
+    [pv]=pv
+    [split]=coreutils
+    [realpath]=coreutils
+)
+
+for c in "${DEPS[@]}"; do
+    command -v "$c" &>/dev/null || MISS+=("${CMD2PKG[$c]}")
 done
 
-########## 彩色输出 ##########
-RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[36m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[提示]${NC} $*"; }
-warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
-err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
+# 去重并安装
+if ((${#MISS[@]})); then
+    read -rp "🚀 检测到缺失依赖：${MISS[*]} ，是否立即安装？(yes/no) " ok
+    [[ "$ok" == "yes" ]] || { echo "❌ 已取消，请手动安装后重试"; exit 1; }
 
-########## 路径读取 ##########
-# 注意：realpath "$_p" 的输出已正确处理了路径中的空格，使用时必须双引号引用
-read_path(){
-    local _p
-    read -rp "$1" _p
-    _p="${_p%\"}"; _p="${_p#\"}"
-    [[ -e "$_p" ]] || { err "路径不存在：$_p"; return 1; }
-    realpath "$_p"
-}
+    # 自动安装
+    sudo apt update -qq
+    sudo apt install -y "${MISS[@]}" || {
+        err "自动安装失败，请检查网络或手动执行：sudo apt install ${MISS[*]}"
+        exit 1
+    }
+    log "✅ 依赖已补装完成，继续运行脚本"
+fi
 
 ########## 邮箱读取 ##########
 read_email(){
