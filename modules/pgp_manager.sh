@@ -92,7 +92,7 @@ list_keys(){
     gpg --list-secret-keys
 }
 
-########## 加密（不分卷 / 自动压缩目录 / 实时进度条） ##########
+########## 加密（不分卷 / 自动压缩目录 / 临时文件放源目录 / 带进度条） ##########
 encrypt(){
     local target recipient idx basename out_dir temp_file final_path total_size
     mapfile -t keys < <(get_all_uids)
@@ -115,15 +115,13 @@ encrypt(){
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
     mkdir -p "$out_dir"
 
-    temp_file="$(mktemp -u)"
+    # 临时文件直接放在源目录同级，隐藏文件，加密完就删
+    temp_file="$(dirname "$target")/.pgp_temp_$$$([[ -d "$target" ]] && echo .tar.gz)"
 
     # 1. 目录打包 | 单文件复用
     if [[ -d "$target" ]]; then
-        # 计算总字节，用于 pv 进度条
         total_size=$(du -sb "$target" | awk '{print $1}')
-        temp_file+=".tar.gz"
         log "📦 正在打包目录 (Gzip 压缩，带进度条)..."
-        # tar -> pv -> gzip  实时显示已写入字节
         tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
           | pv -s "$total_size" \
           | gzip > "$temp_file"
@@ -142,7 +140,6 @@ encrypt(){
     [[ -d "$target" ]] && \
         log "📢 提醒：对方解密后会得到 .tar.gz 文件，需手动解压一次。"
 }
-
 ########## 解密 ##########
 decrypt_core(){
     local input_file="$1" output_action="$2" pass
