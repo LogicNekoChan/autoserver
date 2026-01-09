@@ -91,10 +91,9 @@ list_keys(){
     echo -e "\n${BLUE}====== 私钥 ======${NC}"
     gpg --list-secret-keys
 }
-
-########## 加密（不分卷 / 自动压缩目录 / 临时文件放源目录 / 带进度条） ##########
+########## 边打包边加密（不落盘明文 tar.gz） ##########
 encrypt(){
-    local target recipient idx basename out_dir temp_file final_path total_size
+    local target recipient idx basename out_dir final_path
     mapfile -t keys < <(get_all_uids)
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
 
@@ -115,30 +114,23 @@ encrypt(){
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
     mkdir -p "$out_dir"
 
-    # 临时文件直接放在源目录同级，隐藏文件，加密完就删
-    temp_file="$(dirname "$target")/.pgp_temp_$$$([[ -d "$target" ]] && echo .tar.gz)"
+    final_path="${out_dir}/${basename}$([[ -d "$target" ]] && echo ".tar.gz").gpg"
 
-    # 1. 目录打包 | 单文件复用
     if [[ -d "$target" ]]; then
-        total_size=$(du -sb "$target" | awk '{print $1}')
-        log "📦 正在打包目录 (Gzip 压缩，带进度条)..."
-        tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
+        # 目录：tar -cz → gpg  一条管道
+        local total_size=$(du -sb "$target" | awk '{print $1}')
+        log "📦 正在边打包边加密目录 (不落盘明文)..."
+        tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
           | pv -s "$total_size" \
-          | gzip > "$temp_file"
+          | gpg -e -r "$recipient" -o "$final_path"
     else
-        log "🔄 复制文件到临时位置..."
-        cp -a "$target" "$temp_file"
+        # 单文件：cat → gpg  一条管道
+        log "🔄 正在边读取边加密单文件 (不落盘明文)..."
+        pv "$target" \
+          | gpg -e -r "$recipient" -o "$final_path"
     fi
 
-    # 2. 一次性加密
-    final_path="${out_dir}/${basename}$([[ -d "$target" ]] && echo ".tar.gz").gpg"
-    log "🔐 正在加密..."
-    pv "$temp_file" | gpg -e -r "$recipient" -o "$final_path"
-
-    rm -f "$temp_file"
-    log "✅ 加密完成：$(realpath "$final_path")"
-    [[ -d "$target" ]] && \
-        log "📢 提醒：对方解密后会得到 .tar.gz 文件，需手动解压一次。"
+    log "✅ 边打包边加密完成：$(realpath "$final_path")"
 }
 ########## 解密 ##########
 decrypt_core(){
