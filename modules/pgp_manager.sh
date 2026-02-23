@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v4.5（完全对齐 Win Gpg4win）
-# 目录加密：文件夹.tar → 文件夹.tar.gpg
-# 文件加密：文件 → 文件.gpg
+# Ubuntu PGP 中文管家 v4.7（修复特殊字符密码）
+# 支持密码中的 !@#$%^&*() 等特殊字符
 # ==========================================
 set -euo pipefail
 
@@ -85,8 +84,24 @@ delete_key(){
     gpg --batch --yes --delete-secret-and-public-keys "$email" \
         && log "✅ 已删除" || warn "密钥不存在或已取消"
 }
+
+########## 获取所有密钥 UID ##########
 get_all_uids(){
-    gpg --list-keys --with-colons | awk -F: '$1=="uid"{print $10}' | sed 's/.*<\(.*\)>.*/\1/'
+    gpg --list-keys --with-colons 2>/dev/null | \
+    awk -F: '
+        $1 == "uid" {
+            if (match($0, /<[^>]+>/)) {
+                email = substr($0, RSTART+1, RLENGTH-2)
+                print email
+            }
+        }
+    '
+}
+get_all_uids_simple(){
+    gpg --list-keys 2>/dev/null | \
+    grep -E "^uid" | \
+    grep -oE "[^<]+@[^>]+" | \
+    tr -d ' ' || true
 }
 list_keys(){
     echo -e "\n${BLUE}====== 公钥 ======${NC}"
@@ -95,21 +110,38 @@ list_keys(){
     gpg --list-secret-keys
 }
 
-########## 加密（完全对齐 Win Gpg4win）##########
+########## 加密 ##########
 encrypt(){
     local target recipient idx basename out_dir final_path
-    mapfile -t keys < <(get_all_uids)
+    local -a keys=()
+    
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && keys+=("$line")
+    done < <(get_all_uids)
+    
+    if ((${#keys[@]} == 0)); then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && keys+=("$line")
+        done < <(get_all_uids_simple)
+    fi
+    
     (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
 
     echo -e "\n${BLUE}====== 本地公钥列表 ======${NC}"
-    for i in "${!keys[@]}"; do printf " %2d) %s\n" $((i+1)) "${keys[i]}"; done
+    local i=1
+    for key in "${keys[@]}"; do
+        printf " %2d) %s\n" "$i" "$key"
+        ((i++))
+    done
 
     while true; do
         read -rp "请选择接收者编号（1-${#keys[@]}）： " idx
-        [[ "$idx" =~ ^[0-9]+$ ]] && (( idx>=1 && idx<=${#keys[@]} )) && break
-        err "无效编号"
+        [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#keys[@]} )) && break
+        err "无效编号，请输入 1-${#keys[@]}"
     done
     recipient="${keys[$((idx-1))]}"
+    
+    log "✅ 已选择接收者：$recipient"
 
     target=$(read_path "请输入要加密的文件或目录：")
     basename=$(basename "$target")
@@ -119,14 +151,11 @@ encrypt(){
     mkdir -p "$out_dir"
 
     if [[ -d "$target" ]]; then
-        # Win Gpg4win 目录加密：文件夹.tar.gpg
         final_path="${out_dir}/${basename}.tar.gpg"
         local total_size=$(du -sb "$target" | awk '{print $1}')
         
         log "📦 正在打包加密目录：${basename}.tar.gpg"
-        log "🔐 流程：tar → ZIP压缩 → AES256"
         
-        # tar 打包 → gpg 加密（ZIP压缩算法）
         tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
           | pv -s "$total_size" \
           | gpg --cipher-algo AES256 \
@@ -135,11 +164,9 @@ encrypt(){
                 --digest-algo SHA256 \
                 -e -r "$recipient" -o "$final_path"
     else
-        # Win Gpg4win 文件加密：文件.gpg
         final_path="${out_dir}/${basename}.gpg"
         
         log "🔄 正在加密文件：${basename}.gpg"
-        log "🔐 算法：AES256（无压缩）"
         
         pv "$target" \
           | gpg --cipher-algo AES256 \
@@ -148,27 +175,38 @@ encrypt(){
     fi
 
     log "✅ 加密完成：$(realpath "$final_path")"
-    log "💡 与 Windows Gpg4win / Kleopatra 完全兼容"
 }
 
-########## 解密（完全对齐 Win Gpg4win）##########
+########## 解密（修复特殊字符密码）##########
 decrypt_core(){
-    local input_file="$1" output_action="$2" pass
-    log "🔑 请输入您的私钥密码："
-    read -rs pass; echo
+    local input_file="$1" output_action="$2"
+    local pass_file pass
     
-    if ! echo "$pass" | gpg --batch --yes \
+    log "🔑 请输入您的私钥密码（支持特殊字符）："
+    read -rs pass
+    echo  # 换行
+    
+    # 使用临时文件传递密码，避免 shell 解释特殊字符
+    pass_file=$(mktemp)
+    # 使用 printf '%s' 原样写入，不解释任何转义
+    printf '%s' "$pass" > "$pass_file"
+    
+    # 使用 --passphrase-file 而非 --passphrase-fd 0，避免 echo 解释问题
+    if ! gpg --batch --yes \
             --pinentry-mode loopback \
-            --passphrase-fd 0 \
+            --passphrase-file "$pass_file" \
             --allow-multiple-messages \
             --ignore-mdc-error \
             -d "$input_file" 2>/tmp/gpg_err | eval "$output_action"; then
         
         err "解密失败"
         [[ -s /tmp/gpg_err ]] && warn "GPG 错误：$(cat /tmp/gpg_err)"
-        rm -f /tmp/gpg_err
+        rm -f /tmp/gpg_err "$pass_file"
         return 1
     fi
+    
+    # 安全清理密码文件
+    shred -u "$pass_file" 2>/dev/null || rm -f "$pass_file"
     rm -f /tmp/gpg_err
 }
 
@@ -185,14 +223,11 @@ decrypt_single(){
         return 1
     fi
     
-    # 根据文件名判断类型
     if [[ "$basename_full" == *.tar.gpg ]]; then
-        # Win Gpg4win 目录加密格式
-        log "💡 检测到目录加密格式（.tar.gpg），正在解压..."
+        log "💡 检测到目录加密格式，正在解压..."
         tar -xf "$output_file" -C "$out_dir"
         log "✅ 目录已解密到：$out_dir"
     else
-        # 普通文件
         local out_name="${basename_full%.gpg}"
         [[ -e "$out_dir/$out_name" ]] && out_name="${out_name}.decrypted"
         mv "$output_file" "$out_dir/$out_name"
@@ -218,14 +253,14 @@ decrypt_auto(){
 
 ########## 菜单 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v4.5（Win Gpg4win 对齐版）========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v4.7（支持特殊字符密码）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
     echo "6) 加密（目录→.tar.gpg，文件→.gpg）"
-    echo "7) 解密（自动识别 .tar.gpg / .gpg）"
+    echo "7) 解密（支持 !@#$%^&* 等特殊字符密码）"
     echo "8) 查看已有密钥"
     echo "9) 退出"
     read -rp "请选择操作（1-9）： " c
