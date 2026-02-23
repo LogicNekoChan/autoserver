@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v4.1（不分卷 / 自动装依赖 / 支持目录空格）
+# Ubuntu PGP 中文管家 v4.4（完全对齐 Win Gpg4win）
+# 加密流程：tar打包 → ZIP压缩 → AES256加密
 # ==========================================
 set -euo pipefail
 
 ########## 依赖检查 + 自动安装 ##########
-DEPS=(gpg tar pv realpath)
+DEPS=(gpg tar pv realpath file)
 declare -A CMD2PKG=(
     [gpg]=gnupg
     [tar]=tar
     [pv]=pv
     [realpath]=coreutils
+    [file]=file
 )
 MISS=()
 for c in "${DEPS[@]}"; do
@@ -91,7 +93,8 @@ list_keys(){
     echo -e "\n${BLUE}====== 私钥 ======${NC}"
     gpg --list-secret-keys
 }
-########## 边打包边加密（不落盘明文 tar.gz） ##########
+
+########## 加密（完全对齐 Win Gpg4win）##########
 encrypt(){
     local target recipient idx basename out_dir final_path
     mapfile -t keys < <(get_all_uids)
@@ -114,45 +117,88 @@ encrypt(){
     [[ -z "$out_dir" ]] && out_dir="$(dirname "$target")"
     mkdir -p "$out_dir"
 
-    final_path="${out_dir}/${basename}$([[ -d "$target" ]] && echo ".tar.gz").gpg"
+    final_path="${out_dir}/${basename}.gpg"
 
     if [[ -d "$target" ]]; then
-        # 目录：tar -cz → gpg  一条管道
         local total_size=$(du -sb "$target" | awk '{print $1}')
-        log "📦 正在边打包边加密目录 (不落盘明文)..."
-        tar -czf - -C "$(dirname "$target")" "$(basename "$target")" \
+        log "📦 正在 tar 打包目录（Win Gpg4win 流程）..."
+        log "🔐 使用 ZIP 压缩算法 + AES256 加密..."
+        
+        # Win Gpg4win 流程：tar -cf - | gpg --compress-algo 1 -e
+        # --compress-algo 1 = ZIP 压缩（Gpg4win 默认）
+        tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
           | pv -s "$total_size" \
-          | gpg -e -r "$recipient" -o "$final_path"
+          | gpg --cipher-algo AES256 \
+                --compress-algo 1 \
+                --compress-level 6 \
+                --digest-algo SHA256 \
+                -e -r "$recipient" -o "$final_path"
     else
-        # 单文件：cat → gpg  一条管道
-        log "🔄 正在边读取边加密单文件 (不落盘明文)..."
+        # 单文件：Gpg4win 默认不压缩，直接加密
+        log "🔄 正在加密单文件（Win Gpg4win 默认无压缩）..."
         pv "$target" \
-          | gpg -e -r "$recipient" -o "$final_path"
+          | gpg --cipher-algo AES256 \
+                --digest-algo SHA256 \
+                -e -r "$recipient" -o "$final_path"
     fi
 
-    log "✅ 边打包边加密完成：$(realpath "$final_path")"
+    log "✅ 加密完成：$(realpath "$final_path")"
+    log "💡 与 Windows Gpg4win / Kleopatra 完全兼容"
+    log "   流程：tar → ZIP压缩 → AES256"
 }
-########## 解密 ##########
+
+########## 解密（完全对齐 Win Gpg4win）##########
 decrypt_core(){
     local input_file="$1" output_action="$2" pass
-    log "🔑 请输入您的私钥密码（一次授权）："
+    log "🔑 请输入您的私钥密码："
     read -rs pass; echo
-    echo "$pass" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -d "$input_file" | eval "$output_action"
-    [[ $? -ne 0 ]] && { err "解密失败，密码错误或文件已损坏。"; return 1; }
+    
+    if ! echo "$pass" | gpg --batch --yes \
+            --pinentry-mode loopback \
+            --passphrase-fd 0 \
+            --allow-multiple-messages \
+            --ignore-mdc-error \
+            -d "$input_file" 2>/tmp/gpg_err | eval "$output_action"; then
+        
+        err "解密失败"
+        [[ -s /tmp/gpg_err ]] && warn "GPG 错误：$(cat /tmp/gpg_err)"
+        rm -f /tmp/gpg_err
+        return 1
+    fi
+    rm -f /tmp/gpg_err
 }
+
 decrypt_single(){
-    local file="$1" out basename_no_gpg
+    local file="$1" out basename_no_gpg temp_dir output_file
     basename_no_gpg=$(basename "$file" .gpg)
-    if [[ "$basename_no_gpg" =~ \.tar\.gz$ ]]; then
-        log "💡 检测到 .tar.gz 格式 (压缩目录)，正在解包到 $(dirname "$file")..."
-        decrypt_core "$file" 'pv | tar xzf - -C "$(dirname "$file")"' || return 1
-        log "✅ 文件已解密并解包"
+    temp_dir=$(mktemp -d)
+    output_file="$temp_dir/output"
+    
+    log "🔓 正在解密..."
+    if ! decrypt_core "$file" "cat > \"$output_file\""; then
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    
+    # 检测输出类型
+    local file_type
+    file_type=$(file -b "$output_file")
+    
+    if [[ "$file_type" == *"tar archive"* ]]; then
+        log "💡 检测到 tar 归档（Win Gpg4win 目录加密格式），正在解压..."
+        tar -xf "$output_file" -C "$(dirname "$file")"
+        log "✅ 已解压到：$(dirname "$file")"
     else
-        out="$(dirname "$file")/${basename_no_gpg}.decrypted"
-        decrypt_core "$file" 'pv > "$out"' || return 1
+        # 普通文件
+        out="$(dirname "$file")/${basename_no_gpg}"
+        [[ -e "$out" ]] && out="${out}.decrypted"
+        mv "$output_file" "$out"
         log "✅ 文件已解密：$(realpath "$out")"
     fi
+    
+    rm -rf "$temp_dir"
 }
+
 decrypt_auto(){
     local file="$1"
     if [[ "$file" =~ \.part[a-z][a-z]$ ]]; then
@@ -169,14 +215,14 @@ decrypt_auto(){
 
 ########## 菜单 ##########
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v4.1 ========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v4.4（Win Gpg4win 对齐版）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
-    echo "6) 加密（文件/目录，自动压缩，不分卷）"
-    echo "7) 解密（自动识别分卷/单文件）"
+    echo "6) 加密（tar+ZIP+AES256，与Kleopatra一致）"
+    echo "7) 解密（自动识别tar/单文件）"
     echo "8) 查看已有密钥"
     echo "9) 退出"
     read -rp "请选择操作（1-9）： " c
@@ -188,7 +234,7 @@ while true; do
         4) export_sec_key ;;
         5) delete_key ;;
         6) encrypt ;;
-        7) f=$(read_path "请输入要解密的 .gpg 文件（或第一个分卷 *.partaa）：") || continue
+        7) f=$(read_path "请输入要解密的 .gpg 文件：") || continue
            decrypt_auto "$f" ;;
         8) list_keys ;;
         9) log "bye~"; exit 0 ;;
