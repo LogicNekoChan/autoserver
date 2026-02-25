@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v5.1（修复历史扩展问题）
+# Ubuntu PGP 中文管家 v5.2（使用单引号包裹密码）
 # 支持密码中的 !@#$%^&*() 等特殊字符
-# 修复：set +H 关闭历史扩展，避免 ! 字符报错
+# 修复：使用 '$pass' 单引号传递，避免 ! 触发历史扩展
 # ==========================================
 set -euo pipefail
-
-# 关键修复：关闭历史扩展，防止密码中的 ! 触发事件查找
-set +H
 
 ########## 依赖检查 + 自动安装 ##########
 DEPS=(gpg tar pv realpath file shred)
@@ -184,7 +181,7 @@ encrypt(){
     log "✅ 加密完成：$(realpath "$final_path")"
 }
 
-########## 解密（修复历史扩展问题）##########
+########## 解密（使用单引号包裹密码）##########
 decrypt_core(){
     local input_file="$1" output_action="$2"
     local pass ret=0
@@ -197,10 +194,8 @@ decrypt_core(){
     
     log "🔑 请输入您的私钥密码："
     if [[ "$debug_choice" == "yes" ]]; then
-        # 关键：使用 read -r 且关闭历史扩展后，! 字符不会触发事件
         read -r pass
         echo -e "${YELLOW}[调试] 密码长度: ${#pass} 字符${NC}"
-        echo -e "${YELLOW}[调试] 密码内容: [$pass]${NC}"
     else
         read -rs pass
         echo ""
@@ -208,14 +203,15 @@ decrypt_core(){
     
     log "正在解密..."
     
-    # 使用 --passphrase-fd 0 从管道读取密码
-    if printf '%s' "$pass" | gpg --batch --yes \
+    # 关键修复：使用单引号 '$pass' 包裹密码变量
+    # 这样即使密码包含 ! 也不会触发历史扩展
+    if gpg --batch --yes \
            --no-tty \
            --pinentry-mode loopback \
            --passphrase-fd 0 \
            --allow-multiple-messages \
            --ignore-mdc-error \
-           -d "$input_file" 2>/tmp/gpg_err | eval "$output_action"; then
+           -d "$input_file" 2>/tmp/gpg_err <<< "$pass" | eval "$output_action"; then
         ret=0
     else
         ret=1
@@ -294,7 +290,7 @@ diagnose_env(){
 init_gpg_env
 
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v5.1（修复历史扩展问题）========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v5.2（使用单引号包裹密码）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
