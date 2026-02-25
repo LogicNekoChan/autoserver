@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v4.8（修复解密报错）
+# Ubuntu PGP 中文管家 v4.9（添加密码可见调试）
 # 支持密码中的 !@#$%^&*() 等特殊字符
 # 修复：gpg-agent loopback 配置自动检测
+# 新增：调试模式可显示密码输入
 # ==========================================
 set -euo pipefail
 
@@ -38,26 +39,21 @@ err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
 
 ########## GPG 环境初始化 ##########
 init_gpg_env(){
-    # 关键：设置终端环境变量
     export GPG_TTY=$(tty 2>/dev/null || echo "/dev/tty")
     
-    # 检查并自动配置 gpg-agent
     local gpg_agent_conf="$HOME/.gnupg/gpg-agent.conf"
     local need_reload=false
     
     mkdir -p "$HOME/.gnupg"
     chmod 700 "$HOME/.gnupg"
     
-    # 检查是否已启用 loopback pinentry
     if [[ ! -f "$gpg_agent_conf" ]] || ! grep -q "^allow-loopback-pinentry" "$gpg_agent_conf" 2>/dev/null; then
         warn "首次运行：自动配置 gpg-agent 以支持自动密码输入..."
         echo "allow-loopback-pinentry" >> "$gpg_agent_conf"
         need_reload=true
     fi
     
-    # 检查 pinentry 程序
     if ! grep -q "^pinentry-program" "$gpg_agent_conf" 2>/dev/null; then
-        # 自动检测可用的 pinentry
         if command -v pinentry-curses &>/dev/null; then
             echo "pinentry-program /usr/bin/pinentry-curses" >> "$gpg_agent_conf"
             need_reload=true
@@ -67,7 +63,6 @@ init_gpg_env(){
         fi
     fi
     
-    # 重启 gpg-agent 以应用配置
     if [[ "$need_reload" == true ]]; then
         gpg-connect-agent killagent /bye 2>/dev/null || true
         gpg-connect-agent /bye 2>/dev/null || true
@@ -218,28 +213,34 @@ encrypt(){
     log "✅ 加密完成：$(realpath "$final_path")"
 }
 
-########## 解密（修复版）##########
+########## 解密（带调试选项）##########
 decrypt_core(){
     local input_file="$1" output_action="$2"
-    local pass_file pass ret=0
+    local pass_file pass ret=0 show_pass=false
     
-    # 初始化环境
     init_gpg_env
     
-    log "🔑 请输入您的私钥密码（支持特殊字符）："
-    read -rs pass
-    echo  # 换行
+    # 调试选项：是否显示密码
+    echo ""
+    read -rp "是否显示密码输入（调试用，默认no）？(yes/no): " debug_choice
+    [[ "$debug_choice" == "yes" ]] && show_pass=true
     
-    # 创建临时密码文件（使用内存文件系统更安全）
+    log "🔑 请输入您的私钥密码："
+    if [[ "$show_pass" == true ]]; then
+        read -r pass
+        echo -e "${YELLOW}[调试] 你输入的密码是: [$pass] 长度: ${#pass}${NC}"
+    else
+        read -rs pass
+        echo ""
+    fi
+    
+    # 创建临时密码文件
     pass_file=$(mktemp -p /dev/shm 2>/dev/null || mktemp)
     chmod 600 "$pass_file"
-    
-    # 关键：使用 printf '%s' 原样写入密码，不解释任何转义字符
     printf '%s' "$pass" > "$pass_file"
     
-    # 关键修复：使用 --passphrase-file 配合 --pinentry-mode loopback
-    # 移除 --batch 因为它会阻止某些必要的交互
-    # 添加 --no-tty 确保在管道中也能正常工作
+    log "正在解密，请稍候..."
+    
     if gpg --yes \
            --no-tty \
            --pinentry-mode loopback \
@@ -252,30 +253,29 @@ decrypt_core(){
         ret=1
         err "解密失败"
         
-        # 详细错误诊断
         if [[ -s /tmp/gpg_err ]]; then
             local err_msg=$(cat /tmp/gpg_err)
             warn "GPG 错误详情：$err_msg"
             
             if echo "$err_msg" | grep -q "No secret key"; then
                 warn "💡 提示：找不到匹配的私钥，请先用选项 8 查看已导入的密钥"
-            elif echo "$err_msg" | grep -q "Bad session key\|decryption failed"; then
+            elif echo "$err_msg" | grep -q "Bad session key\|Bad passphrase\|decryption failed"; then
                 warn "💡 提示：密码错误或文件损坏"
+                if [[ "$show_pass" == false ]]; then
+                    warn "   建议：重新运行并选择'显示密码'，确认输入是否正确"
+                fi
             elif echo "$err_msg" | grep -q "pinentry-mode"; then
                 warn "💡 提示：gpg-agent 配置未生效"
                 warn "   请手动执行：echo 'allow-loopback-pinentry' >> ~/.gnupg/gpg-agent.conf"
                 warn "   然后执行：gpg-connect-agent killagent /bye"
-            elif echo "$err_msg" | grep -q "Permission denied"; then
-                warn "💡 提示：文件权限不足"
             fi
         fi
     fi
     
-    # 安全清理密码文件
+    # 安全清理
     if command -v shred &>/dev/null; then
         shred -uz "$pass_file" 2>/dev/null || rm -f "$pass_file"
     else
-        # 覆盖后再删除
         dd if=/dev/urandom of="$pass_file" bs=1 count=$(stat -c%s "$pass_file" 2>/dev/null || echo 1024) 2>/dev/null || true
         rm -f "$pass_file"
     fi
@@ -349,18 +349,17 @@ diagnose_env(){
 }
 
 ########## 菜单 ##########
-# 初始化环境
 init_gpg_env
 
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v4.8（修复解密报错）========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v4.9（添加密码可见调试）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
     echo "6) 加密（目录→.tar.gpg，文件→.gpg）"
-    echo "7) 解密（支持特殊字符密码）"
+    echo "7) 解密（支持显示密码调试）"
     echo "8) 查看已有密钥"
     echo "9) 环境诊断"
     echo "0) 退出"
