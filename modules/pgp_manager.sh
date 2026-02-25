@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v4.9（添加密码可见调试）
+# Ubuntu PGP 中文管家 v5.0（修复子密钥密码问题）
 # 支持密码中的 !@#$%^&*() 等特殊字符
-# 修复：gpg-agent loopback 配置自动检测
-# 新增：调试模式可显示密码输入
+# 修复：使用 --passphrase-fd 0 替代 --passphrase-file 避免密码截断
 # ==========================================
 set -euo pipefail
 
@@ -48,25 +47,15 @@ init_gpg_env(){
     chmod 700 "$HOME/.gnupg"
     
     if [[ ! -f "$gpg_agent_conf" ]] || ! grep -q "^allow-loopback-pinentry" "$gpg_agent_conf" 2>/dev/null; then
-        warn "首次运行：自动配置 gpg-agent 以支持自动密码输入..."
+        warn "首次运行：自动配置 gpg-agent..."
         echo "allow-loopback-pinentry" >> "$gpg_agent_conf"
         need_reload=true
-    fi
-    
-    if ! grep -q "^pinentry-program" "$gpg_agent_conf" 2>/dev/null; then
-        if command -v pinentry-curses &>/dev/null; then
-            echo "pinentry-program /usr/bin/pinentry-curses" >> "$gpg_agent_conf"
-            need_reload=true
-        elif command -v pinentry-tty &>/dev/null; then
-            echo "pinentry-program /usr/bin/pinentry-tty" >> "$gpg_agent_conf"
-            need_reload=true
-        fi
     fi
     
     if [[ "$need_reload" == true ]]; then
         gpg-connect-agent killagent /bye 2>/dev/null || true
         gpg-connect-agent /bye 2>/dev/null || true
-        log "✅ gpg-agent 已配置并重启"
+        log "✅ gpg-agent 已配置"
     fi
 }
 
@@ -83,7 +72,7 @@ read_email(){
     while true; do
         read -rp "$1" email
         [[ "$email" =~ ^[^@]+@[^@]+\.[^@]+$ ]] && echo "$email" && return
-        err "请输入有效邮箱，例如 user@example.com"
+        err "请输入有效邮箱"
     done
 }
 
@@ -103,7 +92,7 @@ export_pub_key(){
 }
 export_sec_key(){
     local email=$(read_email "请输入要导出的邮箱：")
-    warn "⚠️ 私钥导出非常危险，请妥善保管！"
+    warn "⚠️ 私钥导出危险，请妥善保管！"
     read -rp "确认继续？(yes/no)：" c
     [[ "$c" != "yes" ]] && { warn "已取消"; return; }
     local out
@@ -133,12 +122,6 @@ get_all_uids(){
         }
     '
 }
-get_all_uids_simple(){
-    gpg --list-keys 2>/dev/null | \
-    grep -E "^uid" | \
-    grep -oE "[^<]+@[^>]+" | \
-    tr -d ' ' || true
-}
 list_keys(){
     echo -e "\n${BLUE}====== 公钥 ======${NC}"
     gpg --list-keys
@@ -155,13 +138,7 @@ encrypt(){
         [[ -n "$line" ]] && keys+=("$line")
     done < <(get_all_uids)
     
-    if ((${#keys[@]} == 0)); then
-        while IFS= read -r line; do
-            [[ -n "$line" ]] && keys+=("$line")
-        done < <(get_all_uids_simple)
-    fi
-    
-    (( ${#keys[@]} == 0 )) && { warn "无可用公钥，请先导入或创建"; return 1; }
+    (( ${#keys[@]} == 0 )) && { warn "无可用公钥"; return 1; }
 
     echo -e "\n${BLUE}====== 本地公钥列表 ======${NC}"
     local i=1
@@ -173,7 +150,7 @@ encrypt(){
     while true; do
         read -rp "请选择接收者编号（1-${#keys[@]}）： " idx
         [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#keys[@]} )) && break
-        err "无效编号，请输入 1-${#keys[@]}"
+        err "无效编号"
     done
     recipient="${keys[$((idx-1))]}"
     
@@ -189,62 +166,48 @@ encrypt(){
     if [[ -d "$target" ]]; then
         final_path="${out_dir}/${basename}.tar.gpg"
         local total_size=$(du -sb "$target" | awk '{print $1}')
-        
-        log "📦 正在打包加密目录：${basename}.tar.gpg"
+        log "📦 正在打包加密目录..."
         
         tar -cf - -C "$(dirname "$target")" "$(basename "$target")" \
           | pv -s "$total_size" \
-          | gpg --cipher-algo AES256 \
-                --compress-algo 1 \
-                --compress-level 6 \
-                --digest-algo SHA256 \
-                -e -r "$recipient" -o "$final_path"
+          | gpg --cipher-algo AES256 -e -r "$recipient" -o "$final_path"
     else
         final_path="${out_dir}/${basename}.gpg"
-        
-        log "🔄 正在加密文件：${basename}.gpg"
-        
+        log "🔄 正在加密文件..."
         pv "$target" \
-          | gpg --cipher-algo AES256 \
-                --digest-algo SHA256 \
-                -e -r "$recipient" -o "$final_path"
+          | gpg --cipher-algo AES256 -e -r "$recipient" -o "$final_path"
     fi
 
     log "✅ 加密完成：$(realpath "$final_path")"
 }
 
-########## 解密（带调试选项）##########
+########## 解密（修复版 - 使用 --passphrase-fd 0）##########
 decrypt_core(){
     local input_file="$1" output_action="$2"
-    local pass_file pass ret=0 show_pass=false
+    local pass ret=0
     
     init_gpg_env
     
-    # 调试选项：是否显示密码
+    # 调试选项
     echo ""
-    read -rp "是否显示密码输入（调试用，默认no）？(yes/no): " debug_choice
-    [[ "$debug_choice" == "yes" ]] && show_pass=true
+    read -rp "是否显示密码输入（调试用）？(yes/no): " debug_choice
     
     log "🔑 请输入您的私钥密码："
-    if [[ "$show_pass" == true ]]; then
+    if [[ "$debug_choice" == "yes" ]]; then
         read -r pass
-        echo -e "${YELLOW}[调试] 你输入的密码是: [$pass] 长度: ${#pass}${NC}"
+        echo -e "${YELLOW}[调试] 密码长度: ${#pass} 字符${NC}"
     else
         read -rs pass
         echo ""
     fi
     
-    # 创建临时密码文件
-    pass_file=$(mktemp -p /dev/shm 2>/dev/null || mktemp)
-    chmod 600 "$pass_file"
-    printf '%s' "$pass" > "$pass_file"
+    log "正在解密..."
     
-    log "正在解密，请稍候..."
-    
-    if gpg --yes \
+    # 关键修复：使用 --passphrase-fd 0 从管道读取密码
+    if printf '%s' "$pass" | gpg --batch --yes \
            --no-tty \
            --pinentry-mode loopback \
-           --passphrase-file "$pass_file" \
+           --passphrase-fd 0 \
            --allow-multiple-messages \
            --ignore-mdc-error \
            -d "$input_file" 2>/tmp/gpg_err | eval "$output_action"; then
@@ -255,31 +218,22 @@ decrypt_core(){
         
         if [[ -s /tmp/gpg_err ]]; then
             local err_msg=$(cat /tmp/gpg_err)
-            warn "GPG 错误详情：$err_msg"
+            warn "GPG 错误：$err_msg"
             
-            if echo "$err_msg" | grep -q "No secret key"; then
-                warn "💡 提示：找不到匹配的私钥，请先用选项 8 查看已导入的密钥"
-            elif echo "$err_msg" | grep -q "Bad session key\|Bad passphrase\|decryption failed"; then
-                warn "💡 提示：密码错误或文件损坏"
-                if [[ "$show_pass" == false ]]; then
-                    warn "   建议：重新运行并选择'显示密码'，确认输入是否正确"
-                fi
-            elif echo "$err_msg" | grep -q "pinentry-mode"; then
-                warn "💡 提示：gpg-agent 配置未生效"
-                warn "   请手动执行：echo 'allow-loopback-pinentry' >> ~/.gnupg/gpg-agent.conf"
-                warn "   然后执行：gpg-connect-agent killagent /bye"
+            if echo "$err_msg" | grep -q "Bad passphrase"; then
+                warn "💡 密码错误！注意："
+                warn "   1. 检查 Caps Lock 是否开启"
+                warn "   2. 检查是否有额外空格"
+                warn "   3. 重新运行并选择'显示密码'确认输入"
+            elif echo "$err_msg" | grep -q "No secret key"; then
+                warn "💡 未找到私钥，请先导入"
             fi
         fi
     fi
     
-    # 安全清理
-    if command -v shred &>/dev/null; then
-        shred -uz "$pass_file" 2>/dev/null || rm -f "$pass_file"
-    else
-        dd if=/dev/urandom of="$pass_file" bs=1 count=$(stat -c%s "$pass_file" 2>/dev/null || echo 1024) 2>/dev/null || true
-        rm -f "$pass_file"
-    fi
+    # 清理
     rm -f /tmp/gpg_err
+    pass=""
     
     return $ret
 }
@@ -298,7 +252,7 @@ decrypt_single(){
     fi
     
     if [[ "$basename_full" == *.tar.gpg ]]; then
-        log "💡 检测到目录加密格式，正在解压..."
+        log "💡 检测到目录格式，正在解压..."
         tar -xf "$output_file" -C "$out_dir"
         log "✅ 目录已解密到：$out_dir"
     else
@@ -313,16 +267,7 @@ decrypt_single(){
 
 decrypt_auto(){
     local file="$1"
-    if [[ "$file" =~ \.part[a-z][a-z]$ ]]; then
-        log "检测到分卷文件，将合并解密..."
-        local dir=$(dirname "$file") base_no_part=$(basename "$file" | sed 's/\.part.*$//') merged=$(mktemp --suffix=.gpg)
-        cat "$dir/$base_no_part".part* > "$merged"
-        decrypt_single "$merged"
-        rm -f "$merged"
-        log "✅ 分卷合并和解密完成"
-    else
-        decrypt_single "$file"
-    fi
+    decrypt_single "$file"
 }
 
 ########## 环境诊断 ##########
@@ -330,20 +275,12 @@ diagnose_env(){
     echo -e "\n${BLUE}======== GPG 环境诊断 ========${NC}"
     echo "GPG 版本：$(gpg --version | head -1)"
     echo "GPG_TTY：${GPG_TTY:-未设置}"
-    echo "当前 TTY：$(tty 2>/dev/null || echo '无')"
     echo ""
-    echo "gpg-agent.conf 配置："
-    cat "$HOME/.gnupg/gpg-agent.conf" 2>/dev/null || echo "  (文件不存在)"
-    echo ""
-    echo "私钥列表："
-    gpg --list-secret-keys 2>/dev/null | grep -E "(sec|uid)" || echo "  (无私钥)"
-    echo ""
-    echo "测试 loopback 模式："
-    if echo "test" | gpg --pinentry-mode loopback --symmetric --passphrase-fd 0 -o /dev/null 2>&1; then
-        log "✅ loopback 模式可用"
-    else
-        err "❌ loopback 模式不可用，需要配置 allow-loopback-pinentry"
-    fi
+    echo "密钥列表（含子密钥）："
+    gpg --list-secret-keys --with-colons | grep -E "^(sec|ssb)" | while IFS=: read -r type _ _ _ id _; do
+        [[ "$type" == "sec" ]] && echo "  主密钥: $id"
+        [[ "$type" == "ssb" ]] && echo "  子密钥: $id"
+    done
     echo ""
     read -rp "按回车键继续..."
 }
@@ -352,14 +289,14 @@ diagnose_env(){
 init_gpg_env
 
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v4.9（添加密码可见调试）========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v5.0（修复子密钥密码问题）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
-    echo "6) 加密（目录→.tar.gpg，文件→.gpg）"
-    echo "7) 解密（支持显示密码调试）"
+    echo "6) 加密"
+    echo "7) 解密（修复密码传递）"
     echo "8) 查看已有密钥"
     echo "9) 环境诊断"
     echo "0) 退出"
@@ -372,7 +309,7 @@ while true; do
         4) export_sec_key ;;
         5) delete_key ;;
         6) encrypt ;;
-        7) f=$(read_path "请输入要解密的 .gpg 或 .tar.gpg 文件：") || continue
+        7) f=$(read_path "请输入要解密的文件：") || continue
            decrypt_auto "$f" ;;
         8) list_keys ;;
         9) diagnose_env ;;
