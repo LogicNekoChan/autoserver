@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==========================================
-# Ubuntu PGP 中文管家 v5.2（使用单引号包裹密码）
+# Ubuntu PGP 中文管家 v5.3（修复密钥信任问题）
 # 支持密码中的 !@#$%^&*() 等特殊字符
-# 修复：使用 '$pass' 单引号传递，避免 ! 触发历史扩展
+# 修复：自动设置密钥信任级别，确保子密钥可用
 # ==========================================
 set -euo pipefail
 
@@ -59,6 +59,29 @@ init_gpg_env(){
     fi
 }
 
+########## 自动修复密钥信任级别 ##########
+fix_key_trust(){
+    local email="$1"
+    
+    # 检查密钥信任级别
+    local trust=$(gpg --list-keys --with-colons "$email" 2>/dev/null | grep "^pub" | cut -d: -f9)
+    
+    # 如果信任级别不是 ultimate (u) 或 full (f)，则设置
+    if [[ "$trust" != "u" && "$trust" != "f" ]]; then
+        warn "密钥信任级别不足，自动设置为绝对信任..."
+        
+        # 使用 expect 或 here-document 自动设置信任
+        gpg --batch --yes --edit-key "$email" 2>/dev/null << EOF
+trust
+5
+y
+quit
+EOF
+        
+        log "✅ 密钥信任级别已设置为绝对信任"
+    fi
+}
+
 ########## 路径 / 邮箱读取 ##########
 read_path(){
     local _p
@@ -81,6 +104,10 @@ create_key(){ gpg --full-generate-key; }
 import_key(){
     local asc=$(read_path "请输入密钥文件路径：") || return 1
     gpg --import "$asc" && log "✅ 已导入"
+    
+    # 导入后自动设置信任
+    local email=$(gpg --list-keys --with-colons | grep "^uid" | head -1 | grep -oE "[^<]+@[^>]+" | head -1)
+    [[ -n "$email" ]] && fix_key_trust "$email"
 }
 export_pub_key(){
     local email=$(read_email "请输入要导出的邮箱：")
@@ -181,12 +208,16 @@ encrypt(){
     log "✅ 加密完成：$(realpath "$final_path")"
 }
 
-########## 解密（使用单引号包裹密码）##########
+########## 解密（修复版）##########
 decrypt_core(){
     local input_file="$1" output_action="$2"
     local pass ret=0
     
     init_gpg_env
+    
+    # 自动修复密钥信任
+    local email="austinhang0922@outlook.com"
+    fix_key_trust "$email"
     
     # 调试选项
     echo ""
@@ -203,8 +234,7 @@ decrypt_core(){
     
     log "正在解密..."
     
-    # 关键修复：使用单引号 '$pass' 包裹密码变量
-    # 这样即使密码包含 ! 也不会触发历史扩展
+    # 使用 here-string 传递密码
     if gpg --batch --yes \
            --no-tty \
            --pinentry-mode loopback \
@@ -228,6 +258,9 @@ decrypt_core(){
                 warn "   3. 重新运行并选择'显示密码'确认输入"
             elif echo "$err_msg" | grep -q "No secret key"; then
                 warn "💡 未找到私钥，请先导入"
+            elif echo "$err_msg" | grep -q "unusable public key"; then
+                warn "💡 密钥信任级别不足，已尝试自动修复"
+                warn "   请重新运行解密"
             fi
         fi
     fi
@@ -277,10 +310,13 @@ diagnose_env(){
     echo "GPG 版本：$(gpg --version | head -1)"
     echo "GPG_TTY：${GPG_TTY:-未设置}"
     echo ""
-    echo "密钥列表（含子密钥）："
-    gpg --list-secret-keys --with-colons | grep -E "^(sec|ssb)" | while IFS=: read -r type _ _ _ id _; do
-        [[ "$type" == "sec" ]] && echo "  主密钥: $id"
-        [[ "$type" == "ssb" ]] && echo "  子密钥: $id"
+    echo "密钥列表（含信任级别）："
+    gpg --list-keys --with-colons | grep -E "^(pub|sub|uid)" | while IFS=: read -r type _ _ _ id _ _ _ _ trust _; do
+        case "$type" in
+            pub) echo "  主密钥: $id [信任:$trust]" ;;
+            sub) echo "  子密钥: $id" ;;
+            uid) echo "    UID: $(echo "$type" | cut -d: -f10)" ;;
+        esac
     done
     echo ""
     read -rp "按回车键继续..."
@@ -290,14 +326,14 @@ diagnose_env(){
 init_gpg_env
 
 while true; do
-    echo -e "\n${BLUE}======== PGP 中文管家 v5.2（使用单引号包裹密码）========${NC}"
+    echo -e "\n${BLUE}======== PGP 中文管家 v5.3（修复密钥信任问题）========${NC}"
     echo "1) 创建新密钥"
     echo "2) 导入密钥"
     echo "3) 导出公钥"
     echo "4) 导出私钥"
     echo "5) 删除密钥"
     echo "6) 加密"
-    echo "7) 解密（修复!字符问题）"
+    echo "7) 解密（自动修复信任）"
     echo "8) 查看已有密钥"
     echo "9) 环境诊断"
     echo "0) 退出"
