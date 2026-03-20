@@ -109,9 +109,9 @@ compress_split(){
   read -rp "请输入密码（回车跳过）： " password
 
   if [[ -n "$password" ]]; then
-    rar a -p"$password" -v"$volume_size" -ep1 -m5 -rr3% -hp "$outdir/$output" "$target"
+    rar a -p"$password" -v"$volume_size" -ep1 -m3 -rr3% -hp "$outdir/$output" "$target"
   else
-    rar a -v"$volume_size" -ep1 -m5 -rr3% "$outdir/$output" "$target"
+    rar a -v"$volume_size" -ep1 -m3 -rr3% "$outdir/$output" "$target"
   fi
 
   log "✅ 分卷压缩完成：$outdir"
