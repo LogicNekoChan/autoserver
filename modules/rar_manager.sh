@@ -10,7 +10,8 @@
 #   6. 批量解密：目录下所有压缩包自动解密去密码，保留原格式
 #   7. 批量解压：目录下所有压缩包一键全部解压 + 自动去多余嵌套文件夹
 # ==========================================
-set -euo pipefail
+set -eo pipefail
+unset u
 
 # 修复鼠标滚轮乱码
 printf '\e[?1000l'
@@ -289,7 +290,7 @@ batch_decrypt() {
 }
 
 ###########################################################################
-# 【批量解压】最终修复版：全解压 + 自动去外层文件夹
+# 【批量解压】最终修复版：全量解压 + 自动去外层文件夹
 ###########################################################################
 batch_extract() {
   local src_dir
@@ -305,16 +306,25 @@ batch_extract() {
 
   shopt -s nullglob
 
-  # 遍历所有格式压缩包
-  for arc in \
-    "$src_dir"/*.rar "$src_dir"/*.RAR \
-    "$src_dir"/*.zip "$src_dir"/*.ZIP \
-    "$src_dir"/*.7z "$src_dir"/*.7Z \
-    "$src_dir"/*.tar "$src_dir"/*.tar.gz "$src_dir"/*.tgz \
-    "$src_dir"/*.tar.bz2 "$src_dir"/*.tbz2 \
-    "$src_dir"/*.tar.xz "$src_dir"/*.txz \
-    "$src_dir"/*.iso "$src_dir"/*.ISO
-  do
+  # 收集所有压缩包
+  local arcs=()
+  arcs+=("$src_dir"/*.rar)
+  arcs+=("$src_dir"/*.RAR)
+  arcs+=("$src_dir"/*.zip)
+  arcs+=("$src_dir"/*.ZIP)
+  arcs+=("$src_dir"/*.7z)
+  arcs+=("$src_dir"/*.7Z)
+  arcs+=("$src_dir"/*.tar)
+  arcs+=("$src_dir"/*.tar.gz)
+  arcs+=("$src_dir"/*.tgz)
+  arcs+=("$src_dir"/*.tar.bz2)
+  arcs+=("$src_dir"/*.tbz2)
+  arcs+=("$src_dir"/*.tar.xz)
+  arcs+=("$src_dir"/*.txz)
+  arcs+=("$src_dir"/*.iso)
+  arcs+=("$src_dir"/*.ISO)
+
+  for arc in "${arcs[@]}"; do
     [[ -f "$arc" ]] || continue
 
     local filename=$(basename "$arc")
@@ -326,20 +336,33 @@ batch_extract() {
     log "----------------------------------------"
     log "解压：$filename"
 
-    # 解压（临时关闭严格模式，失败不中断）
+    # 解压，失败不中断整个脚本
     set +e
     case "$arc" in
-      *.rar|*.RAR) unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" ;;
-      *.zip|*.ZIP) unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" ;;
-      *.7z|*.7Z|*.iso|*.ISO) 7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" ;;
-      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz) tar -xf "$arc" -C "$tmp_dir" ;;
-      *) warn "不支持格式：$filename" && set -e && rm -rf "$tmp_dir" && continue ;;
+      *.rar|*.RAR)
+        unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" >/dev/null 2>&1
+        ;;
+      *.zip|*.ZIP)
+        unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" >/dev/null 2>&1
+        ;;
+      *.7z|*.7Z|*.iso|*.ISO)
+        7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" >/dev/null 2>&1
+        ;;
+      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
+        tar -xf "$arc" -C "$tmp_dir" >/dev/null 2>&1
+        ;;
+      *)
+        warn "不支持格式：$filename"
+        rm -rf "$tmp_dir"
+        set -e
+        continue
+        ;;
     esac
     set -e
 
-    # 空目录 = 解压失败
-    if [[ ! "$(ls -A "$tmp_dir")" ]]; then
-      warn "解压失败：$filename"
+    # 检查是否解压出内容
+    if [[ -z "$(ls -A "$tmp_dir" 2>/dev/null)" ]]; then
+      warn "解压失败或为空：$filename"
       rm -rf "$tmp_dir"
       continue
     fi
@@ -355,8 +378,12 @@ batch_extract() {
       mv "$tmp_dir"/.??* "$final_dir"/ 2>/dev/null
     fi
 
+    # 清理临时目录
     rm -rf "$tmp_dir"
   done
+
+  # 最后清理残留临时目录
+  rm -rf "${out_root}"/.tmp_*
 
   log "========================================"
   log "✅ 批量解压全部完成！"
