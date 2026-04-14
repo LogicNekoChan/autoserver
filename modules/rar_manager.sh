@@ -75,7 +75,7 @@ compress_single() {
   local base_name
   base_name=$(basename "$target")
   local out_dir
-  out_dir="$(dirname "$target")/${base_name}_压缩包"
+  out_dir="$(dirname "$target")/${base_name}"
 
   mkdir -p "$out_dir"
   log "📂 输出目录：$out_dir"
@@ -104,7 +104,7 @@ compress_split() {
   local base_name
   base_name=$(basename "$target")
   local out_dir
-  out_dir="$(dirname "$target")/${base_name}_压缩包"
+  out_dir="$(dirname "$target")/${base_name}"
 
   mkdir -p "$out_dir"
   log "📂 所有分卷将存入：$out_dir"
