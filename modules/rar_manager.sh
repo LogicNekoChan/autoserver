@@ -303,62 +303,81 @@ batch_extract() {
   local pwd=""
   read -rep "如有加密请输入密码（无则回车）：" pwd
 
+  # 修复：循环内保持 glob 规则
   shopt -s nullglob
-  for arc in "$src_dir"/*.rar "$src_dir"/*.RAR \
-             "$src_dir"/*.zip "$src_dir"/*.ZIP \
-             "$src_dir"/*.7z "$src_dir"/*.7Z \
-             "$src_dir"/*.tar "$src_dir"/*.tar.gz "$src_dir"/*.tgz \
-             "$src_dir"/*.tar.bz2 "$src_dir"/*.tbz2 \
-             "$src_dir"/*.tar.xz "$src_dir"/*.txz \
-             "$src_dir"/*.iso "$src_dir"/*.ISO; do
 
-    [[ -f "$arc" ]] || continue
-    local filename=$(basename "$arc")
-    local base_name="${filename%.*}"
-    local tmp_dir="${out_root}/.tmp_${base_name}"
-    local final_dir="${out_root}/${base_name}"
-    mkdir -p "$tmp_dir" "$final_dir"
+  # 定义所有支持的格式
+  local formats=(
+    "*.rar" "*.RAR"
+    "*.zip" "*.ZIP"
+    "*.7z" "*.7Z"
+    "*.tar" "*.tar.gz" "*.tgz"
+    "*.tar.bz2" "*.tbz2"
+    "*.tar.xz" "*.txz"
+    "*.iso" "*.ISO"
+  )
 
-    log "----------------------------------------"
-    log "解压：$filename"
+  # 循环解压所有压缩包
+  for ext in "${formats[@]}"; do
+    for arc in "${src_dir}/${ext}"; do
+      [[ -f "$arc" ]] || continue
 
-    # 先解压到临时目录
-    case "$arc" in
-      *.rar|*.RAR)
-        unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
-        ;;
-      *.zip|*.ZIP)
-        unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
-        ;;
-      *.7z|*.7Z|*.iso|*.ISO)
-        7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
-        ;;
-      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
-        tar -xf "$arc" -C "$tmp_dir" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
-        ;;
-      *)
-        warn "不支持格式，跳过"
+      local filename=$(basename "$arc")
+      local base_name="${filename%.*}"
+      local tmp_dir="${out_root}/.tmp_${base_name}"
+      local final_dir="${out_root}/${base_name}"
+      mkdir -p "$tmp_dir" "$final_dir"
+
+      log "----------------------------------------"
+      log "解压：$filename"
+
+      # 解压到临时目录（失败不中断脚本）
+      set +e
+      case "$arc" in
+        *.rar|*.RAR)
+          unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" >/dev/null 2>&1
+          ;;
+        *.zip|*.ZIP)
+          unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" >/dev/null 2>&1
+          ;;
+        *.7z|*.7Z|*.iso|*.ISO)
+          7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" >/dev/null 2>&1
+          ;;
+        *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
+          tar -xf "$arc" -C "$tmp_dir" >/dev/null 2>&1
+          ;;
+        *)
+          warn "不支持格式：$filename"
+          rm -rf "$tmp_dir"
+          continue
+          ;;
+      esac
+      set -e
+
+      # 检查是否解压成功
+      if [[ -z "$(ls -A "$tmp_dir")" ]]; then
+        warn "解压失败：$filename"
         rm -rf "$tmp_dir"
         continue
-        ;;
-    esac
+      fi
 
-    # 智能扁平化：如果只有1个文件夹，直接移动内容
-    local items=("$tmp_dir"/*)
-    if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
-      log "📂 检测到单一根目录，自动扁平化..."
-      mv "${items[0]}"/* "$final_dir"/ 2>/dev/null
-      mv "${items[0]}"/.??* "$final_dir"/ 2>/dev/null
-    else
-      mv "$tmp_dir"/* "$final_dir"/ 2>/dev/null
-      mv "$tmp_dir"/.??* "$final_dir"/ 2>/dev/null
-    fi
+      # 智能扁平化：去掉多余外层文件夹
+      local items=("$tmp_dir"/*)
+      if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
+        log "📂 自动扁平化处理"
+        mv "${items[0]}"/* "$final_dir"/ 2>/dev/null
+        mv "${items[0]}"/.??* "$final_dir"/ 2>/dev/null
+      else
+        mv "$tmp_dir"/* "$final_dir"/ 2>/dev/null
+        mv "$tmp_dir"/.??* "$final_dir"/ 2>/dev/null
+      fi
 
-    rm -rf "$tmp_dir"
+      rm -rf "$tmp_dir"
+    done
   done
 
   log "========================================"
-  log "✅ 批量解压完成（已自动清理多余文件夹）！"
+  log "✅ 全部压缩包解压完成！"
 }
 ########## 主菜单 ##########
 while true; do
