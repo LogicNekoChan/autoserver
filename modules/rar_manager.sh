@@ -347,11 +347,11 @@ batch_extract() {
     local items=("$tmp_dir"/*)
     if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
       log "📂 检测到单一根目录，自动扁平化..."
-      mv "${items[0]}"/* "$final_dir"/
-      mv "${items[0]}/.* "$final_dir"/ 2>/dev/null || true
+      mv "${items[0]}"/* "$final_dir"/ 2>/dev/null
+      mv "${items[0]}"/.??* "$final_dir"/ 2>/dev/null
     else
-      mv "$tmp_dir"/* "$final_dir"/
-      mv "$tmp_dir"/.* "$final_dir"/ 2>/dev/null || true
+      mv "$tmp_dir"/* "$final_dir"/ 2>/dev/null
+      mv "$tmp_dir"/.??* "$final_dir"/ 2>/dev/null
     fi
 
     rm -rf "$tmp_dir"
@@ -360,7 +360,6 @@ batch_extract() {
   log "========================================"
   log "✅ 批量解压完成（已自动清理多余文件夹）！"
 }
-
 ########## 主菜单 ##########
 while true; do
   echo -e "\n${BLUE}==== 万能压缩/解压管理器 ====${NC}"
