@@ -7,7 +7,7 @@
 #   3. 解压支持全格式：rar zip 7z tar iso 等
 #   4. 分卷大小 4000m（兼容FAT32/光盘/云盘）
 #   5. 批量压缩：可选择 单卷 / 分卷，每个文件/目录独立压缩
-#   6. 批量解密：目录下所有压缩包自动解密去密码
+#   6. 批量解密：目录下所有压缩包自动解密去密码（支持RAR/ZIP/7Z）
 # ==========================================
 set -euo pipefail
 
@@ -220,7 +220,7 @@ batch_compress() {
 }
 
 ###########################################################################
-# 【批量解密】目录下所有加密RAR自动解密，生成无密码包
+# 【批量解密】支持 RAR ZIP 7Z 自动解密去密码
 ###########################################################################
 batch_decrypt() {
   local src_dir
@@ -234,22 +234,43 @@ batch_decrypt() {
   read -rep "请输入统一密码：" pwd
 
   shopt -s nullglob
-  for arc in "$src_dir"/*.rar "$src_dir"/*.RAR; do
+  # 遍历所有支持的加密压缩包
+  for arc in "$src_dir"/*.rar "$src_dir"/*.RAR \
+             "$src_dir"/*.zip "$src_dir"/*.ZIP \
+             "$src_dir"/*.7z "$src_dir"/*.7Z; do
+
     [[ -f "$arc" ]] || continue
-    local name=$(basename "$arc" .rar)
+    local filename=$(basename "$arc")
+    local base_name="${filename%.*}"  # 去掉后缀
     local temp_dir="/tmp/decrypt_$(date +%s%N)"
     mkdir -p "$temp_dir"
+    local decrypt_success=0
 
     log "----------------------------------------"
-    log "正在解密：$arc"
+    log "正在解密：$filename"
 
-    if ! unrar x -p"$pwd" -idq "$arc" "$temp_dir/" &>/dev/null; then
+    # 根据格式解密解压
+    case "$arc" in
+      *.rar|*.RAR)
+        if unrar x -p"$pwd" -idq "$arc" "$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        ;;
+      *.zip|*.ZIP)
+        if unzip -P "$pwd" -o -q "$arc" -d "$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        ;;
+      *.7z|*.7Z)
+        if 7z x -p"$pwd" -y -bd "$arc" -o"$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        ;;
+    esac
+
+    # 解密失败处理
+    if [[ $decrypt_success -ne 1 ]]; then
       err "解密失败：密码错误/文件损坏"
       rm -rf "$temp_dir"
       continue
     fi
 
-    local output="${out_root}/${name}_无密码.rar"
+    # 重新打包为无密码 RAR
+    local output="${out_root}/${base_name}_无密码.rar"
     rar a -ep1 -m3 -rr5% -idq "$output" "$temp_dir"/*
     rm -rf "$temp_dir"
     check_archive "$output"
@@ -266,7 +287,7 @@ while true; do
   echo "2) 分卷压缩（4000m 自动建目录）"
   echo "3) 🔥 万能解压（全格式）"
   echo "4) 📦 批量压缩（可选单卷/分卷）"
-  echo "5) 🔓 批量解密（目录下所有rar）"
+  echo "5) 🔓 批量解密（支持RAR/ZIP/7Z）"
   echo "6) 退出"
   read -rep "请选择 [1-6]：" choice
 
