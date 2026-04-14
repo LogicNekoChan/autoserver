@@ -7,14 +7,15 @@
 #   3. 解压支持全格式：rar zip 7z tar iso 等
 #   4. 分卷大小 4000m（兼容FAT32/光盘/云盘）
 #   5. 批量压缩：可选择 单卷 / 分卷，每个文件/目录独立压缩
-#   6. 批量解密：自动解密所有压缩包，统一输出为 RAR 格式
+#   6. 批量解密：目录下所有压缩包自动解密去密码，保留原格式
 #   7. 批量解压：目录下所有压缩包一键全部解压 + 自动去多余嵌套文件夹
 # ==========================================
-set -euo pipefail
+set -eo pipefail
+unset u
 
 # 修复鼠标滚轮乱码
-printf '\e[?1000l]'
-trap 'printf "\e[?1000l]"' INT TERM EXIT
+printf '\e[?1000l'
+trap 'printf "\e[?1000l"' INT TERM EXIT
 
 ########## 依赖检查 ##########
 check_dep() {
@@ -187,7 +188,7 @@ batch_compress() {
 
   shopt -s nullglob
   for item in "$src_dir"/*; do
-    [[ "$item" == "$out_root" ]] || continue
+    [[ "$item" == "$out_root" ]] && continue
     local name=$(basename "$item")
     local out_dir="${out_root}/${name}_压缩包"
     mkdir -p "$out_dir"
@@ -220,7 +221,7 @@ batch_compress() {
 }
 
 ###########################################################################
-# 【批量解密】统一输出 RAR + 自动去掉外层多余文件夹
+# 【批量解密】去密码，重新打包，保留原格式
 ###########################################################################
 batch_decrypt() {
   local src_dir
@@ -240,6 +241,7 @@ batch_decrypt() {
 
     [[ -f "$arc" ]] || continue
     local filename=$(basename "$arc")
+    local ext="${filename##*.}"
     local base_name="${filename%.*}"
     local temp_dir="/tmp/decrypt_$(date +%s%N)"
     mkdir -p "$temp_dir"
@@ -266,28 +268,29 @@ batch_decrypt() {
       continue
     fi
 
-    # 自动扁平化：去掉多余外层文件夹
-    local items=("$temp_dir"/*)
-    if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
-      log "📂 自动去掉外层多余文件夹"
-      mv "${items[0]}"/* "$temp_dir"/ 2>/dev/null
-      mv "${items[0]}"/.??* "$temp_dir"/ 2>/dev/null
-    fi
-
-    # 统一打包为 RAR 格式
-    local outfile="${out_root}/${base_name}_无密码.rar"
-    rar a -ep1 -m3 -rr5% -idq "$outfile" "$temp_dir"/*
-    check_archive "$outfile"
+    local outfile="${out_root}/${base_name}_无密码.${ext}"
+    case "$ext" in
+      rar|RAR)
+        rar a -ep1 -m3 -rr5% -idq "$outfile" "$temp_dir"/*
+        check_archive "$outfile"
+        ;;
+      zip|ZIP)
+        cd "$temp_dir" && zip -rq "${outfile}" . && cd - >/dev/null
+        ;;
+      7z|7Z)
+        7z a -y -bd "$outfile" "$temp_dir"/* >/dev/null
+        ;;
+    esac
 
     rm -rf "$temp_dir"
   done
 
   log "========================================"
-  log "✅ 批量解密完成！统一 RAR 格式 + 已去多余文件夹"
+  log "✅ 批量解密完成！"
 }
 
 ###########################################################################
-# 【批量解压】参照解密逻辑写的 → 100%正常连续解压
+# 【批量解压】最终修复版：全量解压 + 自动去外层文件夹
 ###########################################################################
 batch_extract() {
   local src_dir
@@ -319,6 +322,7 @@ batch_extract() {
     log "----------------------------------------"
     log "解压：$filename"
 
+    # 解压（静默 + 失败不中断）
     set +e
     case "$arc" in
       *.rar|*.RAR) unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" ;;
@@ -329,7 +333,7 @@ batch_extract() {
     esac
     set -e
 
-    # 自动扁平化：去掉多余外层文件夹
+    # 自动扁平化：如果只有一个文件夹，就把内容拿出来
     local items=("$tmp_dir"/*)
     if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
       mv "${items[0]}"/* "$final_dir"/ 2>/dev/null
@@ -346,7 +350,6 @@ batch_extract() {
   log "========================================"
   log "✅ 批量解压完成！"
 }
-
 ########## 主菜单 ##########
 while true; do
   echo -e "\n${BLUE}==== 万能压缩/解压管理器 ====${NC}"
@@ -354,7 +357,7 @@ while true; do
   echo "2) 分卷压缩（4000m 自动建目录）"
   echo "3) 🔥 万能解压（单个全格式）"
   echo "4) 📦 批量压缩（单卷/分卷）"
-  echo "5) 🔓 批量解密（统一输出 RAR 格式）"
+  echo "5) 🔓 批量解密（去密码重打包）"
   echo "6) 📂 批量解压（自动去多余文件夹）"
   echo "7) 退出"
   read -rep "请选择 [1-7]：" choice
