@@ -8,7 +8,7 @@
 #   4. 分卷大小 4000m（兼容FAT32/光盘/云盘）
 #   5. 批量压缩：可选择 单卷 / 分卷，每个文件/目录独立压缩
 #   6. 批量解密：目录下所有压缩包自动解密去密码，保留原格式
-#   7. 批量解压：目录下所有压缩包一键全部解压
+#   7. 批量解压：目录下所有压缩包一键全部解压 + 自动去多余嵌套文件夹
 # ==========================================
 set -euo pipefail
 
@@ -289,7 +289,7 @@ batch_decrypt() {
 }
 
 ###########################################################################
-# 【批量解压】一键解压目录下所有压缩包
+# 【批量解压】一键解压 + 自动去除外层多余文件夹（核心优化）
 ###########################################################################
 batch_extract() {
   local src_dir
@@ -298,6 +298,7 @@ batch_extract() {
   local out_root="${src_dir}/批量解压结果"
   mkdir -p "$out_root"
   log "📂 所有文件将解压到：$out_root"
+  log "🔧 自动模式：压缩包内仅单个文件夹时，自动扁平化去除外层目录"
 
   local pwd=""
   read -rep "如有加密请输入密码（无则回车）：" pwd
@@ -314,33 +315,50 @@ batch_extract() {
     [[ -f "$arc" ]] || continue
     local filename=$(basename "$arc")
     local base_name="${filename%.*}"
-    local outdir="${out_root}/${base_name}"
-    mkdir -p "$outdir"
+    local tmp_dir="${out_root}/.tmp_${base_name}"
+    local final_dir="${out_root}/${base_name}"
+    mkdir -p "$tmp_dir" "$final_dir"
 
     log "----------------------------------------"
     log "解压：$filename"
 
+    # 先解压到临时目录
     case "$arc" in
       *.rar|*.RAR)
-        unrar x -p"$pwd" -o+ -idq "$arc" "$outdir/" &>/dev/null || warn "解压失败"
+        unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
         ;;
       *.zip|*.ZIP)
-        unzip -P "$pwd" -o -q "$arc" -d "$outdir" &>/dev/null || warn "解压失败"
+        unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
         ;;
       *.7z|*.7Z|*.iso|*.ISO)
-        7z x -p"$pwd" -y -bd "$arc" -o"$outdir" &>/dev/null || warn "解压失败"
+        7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
         ;;
       *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
-        tar -xf "$arc" -C "$outdir" &>/dev/null || warn "解压失败"
+        tar -xf "$arc" -C "$tmp_dir" &>/dev/null || { warn "解压失败"; rm -rf "$tmp_dir"; continue; }
         ;;
       *)
         warn "不支持格式，跳过"
+        rm -rf "$tmp_dir"
+        continue
         ;;
     esac
+
+    # 智能扁平化：如果只有1个文件夹，直接移动内容
+    local items=("$tmp_dir"/*)
+    if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
+      log "📂 检测到单一根目录，自动扁平化..."
+      mv "${items[0]}"/* "$final_dir"/
+      mv "${items[0]}/.* "$final_dir"/ 2>/dev/null || true
+    else
+      mv "$tmp_dir"/* "$final_dir"/
+      mv "$tmp_dir"/.* "$final_dir"/ 2>/dev/null || true
+    fi
+
+    rm -rf "$tmp_dir"
   done
 
   log "========================================"
-  log "✅ 批量解压完成！"
+  log "✅ 批量解压完成（已自动清理多余文件夹）！"
 }
 
 ########## 主菜单 ##########
@@ -351,7 +369,7 @@ while true; do
   echo "3) 🔥 万能解压（单个全格式）"
   echo "4) 📦 批量压缩（单卷/分卷）"
   echo "5) 🔓 批量解密（去密码重打包）"
-  echo "6) 📂 批量解压（一键全部解压）"
+  echo "6) 📂 批量解压（自动去多余文件夹）"
   echo "7) 退出"
   read -rep "请选择 [1-7]：" choice
 
