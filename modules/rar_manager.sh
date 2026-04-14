@@ -6,6 +6,8 @@
 #   2. 鼠标滚轮不乱码
 #   3. 解压支持全格式：rar zip 7z tar iso 等
 #   4. 分卷大小 4000m（兼容FAT32/光盘/云盘）
+#   5. 批量压缩：可选择 单卷 / 分卷，每个文件/目录独立压缩
+#   6. 批量解密：目录下所有压缩包自动解密去密码
 # ==========================================
 set -euo pipefail
 
@@ -162,20 +164,119 @@ decompress_all() {
   log "✅ 解压完成：$outdir"
 }
 
+###########################################################################
+# 【批量压缩】支持 单卷 / 分卷 二选一，完全对齐原版逻辑
+###########################################################################
+batch_compress() {
+  local src_dir
+  src_dir=$(read_path "请输入要批量压缩的文件夹：")
+
+  local out_root="${src_dir}/批量压缩结果"
+  mkdir -p "$out_root"
+  log "📂 所有压缩包将输出到：$out_root"
+
+  # 选择压缩模式：单卷 / 分卷
+  echo -e "\n${BLUE}请选择批量压缩模式：${NC}"
+  echo "1) 单卷压缩（默认）"
+  echo "2) 分卷压缩（4000M/卷）"
+  read -rep "请选择 [1-2]：" mode
+
+  local password=""
+  read -rep "统一设置密码（回车无密码）：" password
+  local volume_size="4000m"
+
+  shopt -s nullglob
+  for item in "$src_dir"/*; do
+    [[ "$item" == "$out_root" ]] && continue
+    local name=$(basename "$item")
+    local out_dir="${out_root}/${name}_压缩包"
+    mkdir -p "$out_dir"
+    local output="${out_dir}/${name}.rar"
+
+    log "----------------------------------------"
+    log "正在处理：$name"
+
+    if [[ "$mode" == "2" ]]; then
+      log "模式：分卷压缩 ${volume_size}"
+      if [[ -n "$password" ]]; then
+        rar a -v"$volume_size" -p"$password" -hp -ep1 -m3 -rr5% -idq "$output" "$item"
+      else
+        rar a -v"$volume_size" -ep1 -m3 -rr5% -idq "$output" "$item"
+      fi
+      check_archive "${out_dir}/${name}.part1.rar" || check_archive "$output"
+    else
+      log "模式：单卷压缩"
+      if [[ -n "$password" ]]; then
+        rar a -p"$password" -hp -ep1 -m3 -rr5% -idq "$output" "$item"
+      else
+        rar a -ep1 -m3 -rr5% -idq "$output" "$item"
+      fi
+      check_archive "$output"
+    fi
+  done
+
+  log "========================================"
+  log "✅ 批量压缩全部完成！"
+}
+
+###########################################################################
+# 【批量解密】目录下所有加密RAR自动解密，生成无密码包
+###########################################################################
+batch_decrypt() {
+  local src_dir
+  src_dir=$(read_path "请输入存放加密压缩包的文件夹：")
+
+  local out_root="${src_dir}/批量解密结果"
+  mkdir -p "$out_root"
+  log "📂 解密后无密码包将输出到：$out_root"
+
+  local pwd
+  read -rep "请输入统一密码：" pwd
+
+  shopt -s nullglob
+  for arc in "$src_dir"/*.rar "$src_dir"/*.RAR; do
+    [[ -f "$arc" ]] || continue
+    local name=$(basename "$arc" .rar)
+    local temp_dir="/tmp/decrypt_$(date +%s%N)"
+    mkdir -p "$temp_dir"
+
+    log "----------------------------------------"
+    log "正在解密：$arc"
+
+    if ! unrar x -p"$pwd" -idq "$arc" "$temp_dir/" &>/dev/null; then
+      err "解密失败：密码错误/文件损坏"
+      rm -rf "$temp_dir"
+      continue
+    fi
+
+    local output="${out_root}/${name}_无密码.rar"
+    rar a -ep1 -m3 -rr5% -idq "$output" "$temp_dir"/*
+    rm -rf "$temp_dir"
+    check_archive "$output"
+  done
+
+  log "========================================"
+  log "✅ 批量解密全部完成！"
+}
+
 ########## 主菜单 ##########
 while true; do
   echo -e "\n${BLUE}==== 万能压缩/解压管理器 ====${NC}"
   echo "1) 单个压缩（自动建目录）"
   echo "2) 分卷压缩（4000m 自动建目录）"
   echo "3) 🔥 万能解压（全格式）"
-  echo "4) 退出"
-  read -rep "请选择 [1-4]：" choice
+  echo "4) 📦 批量压缩（可选单卷/分卷）"
+  echo "5) 🔓 批量解密（目录下所有rar）"
+  echo "6) 退出"
+  read -rep "请选择 [1-6]：" choice
 
   case "$choice" in
     1) compress_single ;;
     2) compress_split ;;
     3) decompress_all ;;
-    4) log "👋 再见"; exit 0 ;;
-    *) err "请输入 1-4" ;;
+    4) batch_compress ;;
+    5) batch_decrypt ;;
+    6) log "👋 再见"; exit 0 ;;
+    *) err "请输入 1-6" ;;
   esac
 done
