@@ -7,7 +7,8 @@
 #   3. 解压支持全格式：rar zip 7z tar iso 等
 #   4. 分卷大小 4000m（兼容FAT32/光盘/云盘）
 #   5. 批量压缩：可选择 单卷 / 分卷，每个文件/目录独立压缩
-#   6. 批量解密：目录下所有压缩包自动解密去密码（支持RAR/ZIP/7Z）
+#   6. 批量解密：目录下所有压缩包自动解密去密码，保留原格式
+#   7. 批量解压：目录下所有压缩包一键全部解压
 # ==========================================
 set -euo pipefail
 
@@ -125,7 +126,7 @@ compress_split() {
 }
 
 ###########################################################################
-# 万能解压（全格式自动识别）
+# 万能解压（单个全格式自动识别）
 ###########################################################################
 decompress_all() {
   local archive
@@ -165,7 +166,7 @@ decompress_all() {
 }
 
 ###########################################################################
-# 【批量压缩】支持 单卷 / 分卷 二选一，完全对齐原版逻辑
+# 【批量压缩】支持 单卷 / 分卷
 ###########################################################################
 batch_compress() {
   local src_dir
@@ -175,7 +176,6 @@ batch_compress() {
   mkdir -p "$out_root"
   log "📂 所有压缩包将输出到：$out_root"
 
-  # 选择压缩模式：单卷 / 分卷
   echo -e "\n${BLUE}请选择批量压缩模式：${NC}"
   echo "1) 单卷压缩（默认）"
   echo "2) 分卷压缩（4000M/卷）"
@@ -220,64 +220,127 @@ batch_compress() {
 }
 
 ###########################################################################
-# 【批量解密】支持 RAR ZIP 7Z 自动解密去密码
+# 【批量解密】去密码，重新打包，保留原格式
 ###########################################################################
 batch_decrypt() {
   local src_dir
   src_dir=$(read_path "请输入存放加密压缩包的文件夹：")
 
-  local out_root="${src_dir}/批量解密结果"
+  local out_root="${src_dir}/批量解密_无密码包"
   mkdir -p "$out_root"
-  log "📂 解密后无密码包将输出到：$out_root"
+  log "📂 解密后无密码包输出到：$out_root"
 
   local pwd
   read -rep "请输入统一密码：" pwd
 
   shopt -s nullglob
-  # 遍历所有支持的加密压缩包
   for arc in "$src_dir"/*.rar "$src_dir"/*.RAR \
              "$src_dir"/*.zip "$src_dir"/*.ZIP \
              "$src_dir"/*.7z "$src_dir"/*.7Z; do
 
     [[ -f "$arc" ]] || continue
     local filename=$(basename "$arc")
-    local base_name="${filename%.*}"  # 去掉后缀
+    local ext="${filename##*.}"
+    local base_name="${filename%.*}"
     local temp_dir="/tmp/decrypt_$(date +%s%N)"
     mkdir -p "$temp_dir"
-    local decrypt_success=0
+    local ok=0
 
     log "----------------------------------------"
-    log "正在解密：$filename"
+    log "解密：$filename"
 
-    # 根据格式解密解压
     case "$arc" in
       *.rar|*.RAR)
-        if unrar x -p"$pwd" -idq "$arc" "$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        unrar x -p"$pwd" -idq "$arc" "$temp_dir/" &>/dev/null && ok=1
         ;;
       *.zip|*.ZIP)
-        if unzip -P "$pwd" -o -q "$arc" -d "$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        unzip -P "$pwd" -o -q "$arc" -d "$temp_dir/" &>/dev/null && ok=1
         ;;
       *.7z|*.7Z)
-        if 7z x -p"$pwd" -y -bd "$arc" -o"$temp_dir/" &>/dev/null; then decrypt_success=1; fi
+        7z x -p"$pwd" -y -bd "$arc" -o"$temp_dir/" &>/dev/null && ok=1
         ;;
     esac
 
-    # 解密失败处理
-    if [[ $decrypt_success -ne 1 ]]; then
-      err "解密失败：密码错误/文件损坏"
+    if ((!ok)); then
+      err "解密失败：密码错误或损坏"
       rm -rf "$temp_dir"
       continue
     fi
 
-    # 重新打包为无密码 RAR
-    local output="${out_root}/${base_name}_无密码.rar"
-    rar a -ep1 -m3 -rr5% -idq "$output" "$temp_dir"/*
+    local outfile="${out_root}/${base_name}_无密码.${ext}"
+    case "$ext" in
+      rar|RAR)
+        rar a -ep1 -m3 -rr5% -idq "$outfile" "$temp_dir"/*
+        check_archive "$outfile"
+        ;;
+      zip|ZIP)
+        cd "$temp_dir" && zip -rq "${outfile}" . && cd - >/dev/null
+        ;;
+      7z|7Z)
+        7z a -y -bd "$outfile" "$temp_dir"/* >/dev/null
+        ;;
+    esac
+
     rm -rf "$temp_dir"
-    check_archive "$output"
   done
 
   log "========================================"
-  log "✅ 批量解密全部完成！"
+  log "✅ 批量解密完成！"
+}
+
+###########################################################################
+# 【批量解压】一键解压目录下所有压缩包
+###########################################################################
+batch_extract() {
+  local src_dir
+  src_dir=$(read_path "请输入要批量解压的目录：")
+
+  local out_root="${src_dir}/批量解压结果"
+  mkdir -p "$out_root"
+  log "📂 所有文件将解压到：$out_root"
+
+  local pwd=""
+  read -rep "如有加密请输入密码（无则回车）：" pwd
+
+  shopt -s nullglob
+  for arc in "$src_dir"/*.rar "$src_dir"/*.RAR \
+             "$src_dir"/*.zip "$src_dir"/*.ZIP \
+             "$src_dir"/*.7z "$src_dir"/*.7Z \
+             "$src_dir"/*.tar "$src_dir"/*.tar.gz "$src_dir"/*.tgz \
+             "$src_dir"/*.tar.bz2 "$src_dir"/*.tbz2 \
+             "$src_dir"/*.tar.xz "$src_dir"/*.txz \
+             "$src_dir"/*.iso "$src_dir"/*.ISO; do
+
+    [[ -f "$arc" ]] || continue
+    local filename=$(basename "$arc")
+    local base_name="${filename%.*}"
+    local outdir="${out_root}/${base_name}"
+    mkdir -p "$outdir"
+
+    log "----------------------------------------"
+    log "解压：$filename"
+
+    case "$arc" in
+      *.rar|*.RAR)
+        unrar x -p"$pwd" -o+ -idq "$arc" "$outdir/" &>/dev/null || warn "解压失败"
+        ;;
+      *.zip|*.ZIP)
+        unzip -P "$pwd" -o -q "$arc" -d "$outdir" &>/dev/null || warn "解压失败"
+        ;;
+      *.7z|*.7Z|*.iso|*.ISO)
+        7z x -p"$pwd" -y -bd "$arc" -o"$outdir" &>/dev/null || warn "解压失败"
+        ;;
+      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
+        tar -xf "$arc" -C "$outdir" &>/dev/null || warn "解压失败"
+        ;;
+      *)
+        warn "不支持格式，跳过"
+        ;;
+    esac
+  done
+
+  log "========================================"
+  log "✅ 批量解压完成！"
 }
 
 ########## 主菜单 ##########
@@ -285,11 +348,12 @@ while true; do
   echo -e "\n${BLUE}==== 万能压缩/解压管理器 ====${NC}"
   echo "1) 单个压缩（自动建目录）"
   echo "2) 分卷压缩（4000m 自动建目录）"
-  echo "3) 🔥 万能解压（全格式）"
-  echo "4) 📦 批量压缩（可选单卷/分卷）"
-  echo "5) 🔓 批量解密（支持RAR/ZIP/7Z）"
-  echo "6) 退出"
-  read -rep "请选择 [1-6]：" choice
+  echo "3) 🔥 万能解压（单个全格式）"
+  echo "4) 📦 批量压缩（单卷/分卷）"
+  echo "5) 🔓 批量解密（去密码重打包）"
+  echo "6) 📂 批量解压（一键全部解压）"
+  echo "7) 退出"
+  read -rep "请选择 [1-7]：" choice
 
   case "$choice" in
     1) compress_single ;;
@@ -297,7 +361,8 @@ while true; do
     3) decompress_all ;;
     4) batch_compress ;;
     5) batch_decrypt ;;
-    6) log "👋 再见"; exit 0 ;;
-    *) err "请输入 1-6" ;;
+    6) batch_extract ;;
+    7) log "👋 再见"; exit 0 ;;
+    *) err "请输入 1-7" ;;
   esac
 done
