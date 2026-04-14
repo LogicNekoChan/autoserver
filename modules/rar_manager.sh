@@ -300,6 +300,11 @@ batch_extract() {
   mkdir -p "$out_root"
   log "📂 所有文件将解压到：$out_root"
 
+  echo -e "\n${BLUE}请选择解压模式：${NC}"
+  echo "1) 自动识别分卷/单卷（默认）"
+  echo "2) 强制单文件解压"
+  read -rep "请选择 [1-2]：" mode
+
   local pwd=""
   read -rep "如有加密请输入密码（无则回车）：" pwd
 
@@ -312,30 +317,63 @@ batch_extract() {
              "$src_dir"/*.tar.xz "$src_dir"/*.txz \
              "$src_dir"/*.iso "$src_dir"/*.ISO; do
 
+    # 跳过输出目录本身 & 跳过非文件
     [[ -f "$arc" ]] || continue
+    [[ "$arc" == "$out_root"/* ]] && continue
+
+    # 跳过分卷压缩包的非首卷（避免重复解压）
+    if [[ "$arc" =~ \.part([0-9]+)\.rar$ || "$arc" =~ \.r([0-9]+)$ ]]; then
+      local part_num=${BASH_REMATCH[1]}
+      [[ "$part_num" != "1" ]] && {
+        log "⏭️ 跳过分卷文件：$(basename "$arc")"
+        continue
+      }
+    fi
+
     local filename=$(basename "$arc")
     local base_name="${filename%.*}"
+    # 清理分卷后缀 part1 / r01 等，让文件夹名称更干净
+    base_name="${base_name%.part[0-9]*}"
+    base_name="${base_name%.r[0-9]*}"
+
     local tmp_dir="${out_root}/.tmp_${base_name}"
     local final_dir="${out_root}/${base_name}"
     mkdir -p "$tmp_dir" "$final_dir"
 
     log "----------------------------------------"
-    log "解压：$filename"
+    log "正在解压：$filename"
 
     # 解压（静默 + 失败不中断）
     set +e
     case "$arc" in
-      *.rar|*.RAR) unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/" ;;
-      *.zip|*.ZIP) unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/" ;;
-      *.7z|*.7Z|*.iso|*.ISO) 7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir" ;;
-      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz) tar -xf "$arc" -C "$tmp_dir" ;;
-      *) warn "跳过不支持格式" && set -e && continue ;;
+      *.rar|*.RAR)
+        log "格式：RAR（自动分卷）"
+        unrar x -p"$pwd" -o+ -idq "$arc" "$tmp_dir/"
+        ;;
+      *.zip|*.ZIP)
+        log "格式：ZIP"
+        unzip -P "$pwd" -o -q "$arc" -d "$tmp_dir/"
+        ;;
+      *.7z|*.7Z|*.iso|*.ISO)
+        log "格式：7Z/ISO"
+        7z x -p"$pwd" -y -bd "$arc" -o"$tmp_dir"
+        ;;
+      *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz)
+        log "格式：压缩包/TAR"
+        tar -xf "$arc" -C "$tmp_dir"
+        ;;
+      *)
+        warn "⏭️ 跳过不支持格式：$filename"
+        set -e
+        continue
+        ;;
     esac
     set -e
 
     # 自动扁平化：如果只有一个文件夹，就把内容拿出来
     local items=("$tmp_dir"/*)
     if [[ ${#items[@]} -eq 1 && -d "${items[0]}" ]]; then
+      log "执行：自动扁平化目录"
       mv "${items[0]}"/* "$final_dir"/ 2>/dev/null
       mv "${items[0]}"/.??* "$final_dir"/ 2>/dev/null
     else
@@ -344,12 +382,14 @@ batch_extract() {
     fi
 
     rm -rf "$tmp_dir"
+    log "✅ 解压完成：$filename"
   done
 
   rm -rf "${out_root}"/.tmp_*
   log "========================================"
-  log "✅ 批量解压完成！"
+  log "✅ 批量解压全部完成！"
 }
+
 ########## 主菜单 ##########
 while true; do
   echo -e "\n${BLUE}==== 万能压缩/解压管理器 ====${NC}"
