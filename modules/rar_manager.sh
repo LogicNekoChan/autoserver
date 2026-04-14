@@ -190,7 +190,7 @@ batch_compress() {
   for item in "$src_dir"/*; do
     [[ "$item" == "$out_root" ]] && continue
     local name=$(basename "$item")
-    local out_dir="${out_root}/${name}_压缩包"
+    local out_dir="${out_root}/${name}"
     mkdir -p "$out_dir"
     local output="${out_dir}/${name}.rar"
 
