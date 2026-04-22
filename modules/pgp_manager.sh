@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ==========================================
 # Ubuntu 交互式 PGP 密钥/文件管理器
-# 新增：导出公钥 & 导出私钥 分离
-# 全程中文、自动引号、目录级相对路径
+# 增强版：支持 批量加密 / 批量解密
+# 全程中文、自动处理引号、绝对路径、强容错
 # ==========================================
 set -euo pipefail
+shopt -s nullglob
 
 ########## 依赖检查 ##########
 for cmd in gpg tar; do
@@ -12,131 +13,205 @@ for cmd in gpg tar; do
 done
 
 ########## 彩色输出 ##########
-RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[36m'; NC='\033[0m'
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+BLUE='\033[36m'
+NC='\033[0m'
+
 log()  { echo -e "${GREEN}[提示]${NC} $*"; }
 warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
 err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
+info() { echo -e "${BLUE}[信息]${NC} $*"; }
 
-########## 安全读路径（自动去引号+转绝对路径） ##########
-read_path(){
+########## 安全读路径（自动去引号 + 绝对路径） ##########
+read_path() {
   local _path
   read -rp "$1" _path
-  _path="${_path%\"}"; _path="${_path#\"}"   # 去掉两端引号
+  _path="${_path%\"}"
+  _path="${_path#\"}"
   [[ -e "$_path" ]] || { err "路径不存在：$_path"; return 1; }
   realpath "$_path"
 }
 
+########## 读取目录（批量专用） ##########
+read_dir() {
+  local _dir
+  read -rp "$1" _dir
+  _path="${_dir%\"}"
+  _path="${_dir#\"}"
+  [[ -d "$_dir" ]] || { err "不是有效目录：$_dir"; return 1; }
+  realpath "$_dir"
+}
+
 ########## 1. 创建密钥 ##########
-create_key(){
-  log "启动 GPG 全量密钥生成向导..."
+create_key() {
+  log "启动 GPG 完整密钥生成向导..."
   gpg --full-generate-key
 }
 
 ########## 2. 导入密钥 ##########
-import_key(){
+import_key() {
   local asc
   asc=$(read_path "请输入密钥文件路径（.asc/.gpg）：")
   gpg --import "$asc"
-  log "✅ 已导入"
+  log "✅ 密钥导入完成"
 }
 
 ########## 3. 导出公钥 ##########
-export_pub_key(){
+export_pub_key() {
   local email out
-  read -rp "要导出的邮箱： " email
-  read -rp "保存到哪个文件（直接回车默认 ${email}_pub.asc）： " out
+  read -rp "请输入要导出的邮箱/ID：" email
+  read -rp "保存文件名（默认 ${email}_pub.asc）：" out
   [[ -z "$out" ]] && out="${email}_pub.asc"
   gpg --armor --export "$email" > "$out"
-  log "✅ 公钥已导出到 $(realpath "$out")"
+  log "✅ 公钥已导出：$(realpath "$out")"
 }
 
 ########## 4. 导出私钥 ##########
-export_sec_key(){
+export_sec_key() {
   local email out
-  read -rp "要导出的邮箱： " email
-  read -rp "保存到哪个文件（直接回车默认 ${email}_sec.asc）： " out
+  read -rp "请输入要导出的邮箱/ID：" email
+  read -rp "保存文件名（默认 ${email}_sec.asc）：" out
   [[ -z "$out" ]] && out="${email}_sec.asc"
   gpg --armor --export-secret-keys "$email" > "$out"
-  log "⚠️  私钥已导出到 $(realpath "$out")，请妥善保管！"
+  warn "⚠️ 私钥已导出，请严格保密！路径：$(realpath "$out")"
 }
 
 ########## 5. 删除密钥 ##########
-delete_key(){
+delete_key() {
   local email
-  read -rp "要删除的邮箱： " email
-  gpg --delete-secret-and-public-keys "$email" 2>/dev/null && log "✅ 已删除" || warn "可能已取消或密钥不存在"
+  read -rp "请输入要删除的邮箱/ID：" email
+  gpg --delete-secret-and-public-keys "$email" 2>/dev/null \
+    && log "✅ 密钥已删除" \
+    || warn "删除失败（可能不存在或已取消）"
 }
 
-########## 6. 加密 ##########
-encrypt(){
-  local target recipient target_dir basename
-  target=$(read_path "要加密的文件或文件夹：")
-  read -rp "接收者邮箱： " recipient
+########## 6. 单个加密（文件/目录） ##########
+encrypt_single() {
+  local target recipient dir name
+  target=$(read_path "请输入要加密的文件/目录：")
+  read -rp "接收者邮箱：" recipient
 
-  target_dir=$(dirname "$target")
-  basename=$(basename "$target")
-  cd "$target_dir"
-
-  if [[ -d "$basename" ]]; then
-    log "检测到目录，正在打包并加密..."
-    tar czf - "$basename" | gpg -e -r "$recipient" > "${basename}.tar.gz.gpg"
-    log "✅ 已生成 ${basename}.tar.gz.gpg"
-  else
-    gpg -e -r "$recipient" -o "${basename}.gpg" "$basename"
-    log "✅ 已生成 ${basename}.gpg"
-  fi
-}
-
-########## 7. 解密 ##########
-decrypt(){
-  local gpg_file dir basename
-  gpg_file=$(read_path "要解密的 .gpg 文件：")
-  dir=$(dirname "$gpg_file")
-  basename=$(basename "$gpg_file")
+  dir=$(dirname "$target")
+  name=$(basename "$target")
   cd "$dir"
 
-  if [[ "$basename" == *.tar.gz.gpg ]]; then
-    log "检测到目录包，正在解密并解压..."
-    gpg -d "$basename" | tar xzf -
-    log "✅ 目录已恢复"
+  if [[ -d "$name" ]]; then
+    info "检测到目录，自动打包加密..."
+    tar czf - "$name" | gpg -e -r "$recipient" -o "${name}.tar.gz.gpg"
+    log "✅ 加密完成：${name}.tar.gz.gpg"
   else
-    local out="${basename%.gpg}"
-    gpg -d "$basename" > "$out"
-    log "✅ 文件已解密为 $out"
+    gpg -e -r "$recipient" -o "${name}.gpg" "$name"
+    log "✅ 加密完成：${name}.gpg"
   fi
 }
 
-########## 8. 列出密钥 ##########
-list_keys(){
+########## 7. 单个解密 ##########
+decrypt_single() {
+  local gpg_file dir name
+  gpg_file=$(read_path "请输入 .gpg 加密文件路径：")
+  dir=$(dirname "$gpg_file")
+  name=$(basename "$gpg_file")
+  cd "$dir"
+
+  if [[ "$name" == *.tar.gz.gpg ]]; then
+    info "检测为目录包，自动解压还原..."
+    gpg -d "$name" | tar xzf -
+    log "✅ 目录解密解压完成"
+  else
+    local out="${name%.gpg}"
+    gpg -d "$name" > "$out"
+    log "✅ 文件解密完成：$out"
+  fi
+}
+
+########## 8. 批量加密（整个目录所有文件） ##########
+encrypt_batch() {
+  local src_dir recipient out_dir files count=0
+
+  src_dir=$(read_dir "请输入**待加密文件所在目录**：")
+  read -rp "接收者邮箱：" recipient
+  read -rp "请输入加密后输出目录（默认：./encrypted）：" out_dir
+  [[ -z "$out_dir" ]] && out_dir="./encrypted"
+  mkdir -p "$out_dir"
+  out_dir=$(realpath "$out_dir")
+
+  info "开始批量加密，目录：$src_dir"
+  files=("$src_dir"/*)
+
+  for item in "${files[@]}"; do
+    name=$(basename "$item")
+    if [[ -f "$item" && ! "$name" =~ \.gpg$ ]]; then
+      gpg -e -r "$recipient" -o "$out_dir/$name.gpg" "$item"
+      ((count++))
+      log "已加密：$name"
+    fi
+  done
+
+  log "✅ 批量加密完成！总计：$count 个文件 | 输出目录：$out_dir"
+}
+
+########## 9. 批量解密（整个目录所有 .gpg） ##########
+decrypt_batch() {
+  local src_dir out_dir files count=0
+
+  src_dir=$(read_dir "请输入**存放 .gpg 文件的目录**：")
+  read -rp "请输入解密后输出目录（默认：./decrypted）：" out_dir
+  [[ -z "$out_dir" ]] && out_dir="./decrypted"
+  mkdir -p "$out_dir"
+  out_dir=$(realpath "$out_dir")
+
+  info "开始批量解密，目录：$src_dir"
+  files=("$src_dir"/*.gpg)
+
+  for gpg_file in "${files[@]}"; do
+    [[ -f "$gpg_file" ]] || continue
+    name=$(basename "$gpg_file" .gpg)
+    gpg -d "$gpg_file" > "$out_dir/$name"
+    ((count++))
+    log "已解密：$name"
+  done
+
+  log "✅ 批量解密完成！总计：$count 个文件 | 输出目录：$out_dir"
+}
+
+########## 10. 查看密钥 ##########
+list_keys() {
   echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
   gpg --list-keys
   echo -e "\n${BLUE}====== 私钥列表 ======${NC}"
   gpg --list-secret-keys
 }
 
-########## 菜单循环 ##########
+########## 主菜单 ##########
 while true; do
-  echo -e "\n${BLUE}======== PGP 中文管家 ========${NC}"
+  echo -e "\n${BLUE}======== PGP 中文管家（增强批量版）========${NC}"
   echo "1) 创建新密钥"
   echo "2) 导入密钥"
   echo "3) 导出公钥"
   echo "4) 导出私钥"
   echo "5) 删除密钥"
-  echo "6) 加密文件/文件夹"
-  echo "7) 解密文件/文件夹"
-  echo "8) 查看已有密钥"
-  echo "9) 退出"
-  read -rp "请选择操作（1-9）：" choice
+  echo "6) 单个加密（文件/目录）"
+  echo "7) 单个解密"
+  echo "8) 批量加密（整个目录）"
+  echo "9) 批量解密（整个目录）"
+  echo "10) 查看所有密钥"
+  echo "11) 退出"
+  read -rp "请选择操作（1-11）：" choice
+
   case $choice in
     1) create_key ;;
     2) import_key ;;
     3) export_pub_key ;;
     4) export_sec_key ;;
     5) delete_key ;;
-    6) encrypt ;;
-    7) decrypt ;;
-    8) list_keys ;;
-    9) log "bye~"; exit 0 ;;
-    *) err "请输入 1-9 之间的数字" ;;
+    6) encrypt_single ;;
+    7) decrypt_single ;;
+    8) encrypt_batch ;;
+    9) decrypt_batch ;;
+    10) list_keys ;;
+    11) log "👋 再见！"; exit 0 ;;
+    *) err "请输入 1-11 之间的数字" ;;
   esac
 done
