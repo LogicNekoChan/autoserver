@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================
 # Ubuntu 交互式 PGP 密钥/文件管理器
-# 增强版：支持 批量加密 / 批量解密
+# 终极版：加密 + 解密 + 签名 + 验签 + 批量处理
 # 全程中文、自动处理引号、绝对路径、强容错
 # ==========================================
 set -euo pipefail
@@ -38,8 +38,8 @@ read_path() {
 read_dir() {
   local _dir
   read -rp "$1" _dir
-  _path="${_dir%\"}"
-  _path="${_dir#\"}"
+  _dir="${_dir%\"}"
+  _dir="${_dir#\"}"
   [[ -d "$_dir" ]] || { err "不是有效目录：$_dir"; return 1; }
   realpath "$_dir"
 }
@@ -142,7 +142,7 @@ encrypt_batch() {
 
   for item in "${files[@]}"; do
     name=$(basename "$item")
-    if [[ -f "$item" && ! "$name" =~ \.gpg$ ]]; then
+    if [[ -f "$item" && ! "$name" =~ \.gpg$ && ! "$name" =~ \.sig$ ]]; then
       gpg -e -r "$recipient" -o "$out_dir/$name.gpg" "$item"
       ((count++))
       log "已加密：$name"
@@ -176,7 +176,54 @@ decrypt_batch() {
   log "✅ 批量解密完成！总计：$count 个文件 | 输出目录：$out_dir"
 }
 
-########## 10. 查看密钥 ##########
+########## 10. GPG 签名文件（单独签名） ##########
+sign_file() {
+  local file signer out
+  file=$(read_path "请输入要签名的文件：")
+  read -rp "请输入签名者邮箱（你的私钥邮箱）：" signer
+  out="${file}.sig"
+  gpg --detach-sign -u "$signer" -o "$out" "$file"
+  log "✅ 签名完成：$out"
+  warn "⚠️ 请把【原文件 + .sig 签名文件】一起发给对方验证"
+}
+
+########## 11. GPG 验证签名 ##########
+verify_sign() {
+  local file
+  file=$(read_path "请输入原文件（会自动找 .sig）：")
+  info "正在验证签名有效性..."
+  if gpg --verify "${file}.sig" "$file"; then
+    log "✅ 验证通过！文件未篡改，签名有效"
+  else
+    err "❌ 验证失败！文件被篡改或签名无效"
+  fi
+}
+
+########## 12. 签名 + 加密（最安全） ##########
+sign_encrypt() {
+  local file recipient signer out
+  file=$(read_path "请输入要签名加密的文件：")
+  read -rp "签名者邮箱（你）：" signer
+  read -rp "接收者邮箱（对方）：" recipient
+  out="${file}.gpg"
+  gpg -u "$signer" -e -r "$recipient" -s -o "$out" "$file"
+  log "✅ 已签名并加密：$out"
+}
+
+########## 13. 解密 + 验签（完整验证） ##########
+decrypt_verify() {
+  local file out
+  file=$(read_path "请输入 .gpg 加密签名文件：")
+  out="${file%.gpg}"
+  info "正在解密并验证签名..."
+  if gpg -d -o "$out" "$file"; then
+    log "✅ 解密成功 + 签名验证通过"
+  else
+    err "❌ 解密或验签失败"
+  fi
+}
+
+########## 14. 查看密钥 ##########
 list_keys() {
   echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
   gpg --list-keys
@@ -186,7 +233,7 @@ list_keys() {
 
 ########## 主菜单 ##########
 while true; do
-  echo -e "\n${BLUE}======== PGP 中文管家（增强批量版）========${NC}"
+  echo -e "\n${BLUE}======== PGP 中文管家（终极签名版）========${NC}"
   echo "1) 创建新密钥"
   echo "2) 导入密钥"
   echo "3) 导出公钥"
@@ -194,11 +241,15 @@ while true; do
   echo "5) 删除密钥"
   echo "6) 单个加密（文件/目录）"
   echo "7) 单个解密"
-  echo "8) 批量加密（整个目录）"
-  echo "9) 批量解密（整个目录）"
-  echo "10) 查看所有密钥"
-  echo "11) 退出"
-  read -rp "请选择操作（1-11）：" choice
+  echo "8) 批量加密"
+  echo "9) 批量解密"
+  echo "10) 单独签名文件（生成 .sig）"
+  echo "11) 验证文件签名"
+  echo "12) 签名+加密一体（最安全）"
+  echo "13) 解密+验签一体"
+  echo "14) 查看所有密钥"
+  echo "15) 退出"
+  read -rp "请选择操作（1-15）：" choice
 
   case $choice in
     1) create_key ;;
@@ -210,8 +261,12 @@ while true; do
     7) decrypt_single ;;
     8) encrypt_batch ;;
     9) decrypt_batch ;;
-    10) list_keys ;;
-    11) log "👋 再见！"; exit 0 ;;
-    *) err "请输入 1-11 之间的数字" ;;
+    10) sign_file ;;
+    11) verify_sign ;;
+    12) sign_encrypt ;;
+    13) decrypt_verify ;;
+    14) list_keys ;;
+    15) log "👋 再见！"; exit 0 ;;
+    *) err "请输入 1-15 之间的数字" ;;
   esac
 done
