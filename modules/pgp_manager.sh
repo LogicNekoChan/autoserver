@@ -1,272 +1,395 @@
 #!/usr/bin/env bash
 # ==========================================
 # Ubuntu 交互式 PGP 密钥/文件管理器
-# 终极版：加密 + 解密 + 签名 + 验签 + 批量处理
-# 全程中文、自动处理引号、绝对路径、强容错
+# 优化增强版：加密 + 解密 + 签名 + 验签 + 批量处理
+# 中文交互 | 强容错 | 高安全 | 全兼容
 # ==========================================
-set -euo pipefail
+
+# 安全模式配置（不使用严格模式，避免非预期中断）
+set -o pipefail
 shopt -s nullglob
+shopt -s extglob
 
-########## 依赖检查 ##########
-for cmd in gpg tar; do
-  command -v "$cmd" >/dev/null || { echo "❌ 请先安装：sudo apt install gnupg tar"; exit 1; }
-done
-
-########## 彩色输出 ##########
+# ==================== 全局配置 ====================
+# 依赖命令
+REQUIRED_COMMANDS=("gpg" "tar" "realpath")
+# 颜色定义
 RED='\033[31m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
 BLUE='\033[36m'
+PURPLE='\033[35m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}[提示]${NC} $*"; }
-warn() { echo -e "${YELLOW}[警告]${NC} $*"; }
-err()  { echo -e "${RED}[错误]${NC} $*" >&2; }
-info() { echo -e "${BLUE}[信息]${NC} $*"; }
+# ==================== 工具函数 ====================
+# 日志输出函数
+log()  { echo -e "${GREEN}[✅ 提示]${NC} $*"; }
+warn() { echo -e "${YELLOW}[⚠️ 警告]${NC} $*"; }
+err()  { echo -e "${RED}[❌ 错误]${NC} $*" >&2; }
+info() { echo -e "${BLUE}[ℹ️ 信息]${NC} $*"; }
+title(){ echo -e "\n${PURPLE}===== $* =====${NC}"; }
 
-########## 安全读路径（自动去引号 + 绝对路径） ##########
-read_path() {
-  local _path
-  read -rp "$1" _path
-  _path="${_path%\"}"
-  _path="${_path#\"}"
-  [[ -e "$_path" ]] || { err "路径不存在：$_path"; return 1; }
-  realpath "$_path"
-}
+# 依赖检查
+check_dependencies() {
+    local missing=()
+    for cmd in "${REQUIRED_COMMANDS[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
+        fi
+    done
 
-########## 读取目录（批量专用） ##########
-read_dir() {
-  local _dir
-  read -rp "$1" _dir
-  _dir="${_dir%\"}"
-  _dir="${_dir#\"}"
-  [[ -d "$_dir" ]] || { err "不是有效目录：$_dir"; return 1; }
-  realpath "$_dir"
-}
-
-########## 1. 创建密钥 ##########
-create_key() {
-  log "启动 GPG 完整密钥生成向导..."
-  gpg --full-generate-key
-}
-
-########## 2. 导入密钥 ##########
-import_key() {
-  local asc
-  asc=$(read_path "请输入密钥文件路径（.asc/.gpg）：")
-  gpg --import "$asc"
-  log "✅ 密钥导入完成"
-}
-
-########## 3. 导出公钥 ##########
-export_pub_key() {
-  local email out
-  read -rp "请输入要导出的邮箱/ID：" email
-  read -rp "保存文件名（默认 ${email}_pub.asc）：" out
-  [[ -z "$out" ]] && out="${email}_pub.asc"
-  gpg --armor --export "$email" > "$out"
-  log "✅ 公钥已导出：$(realpath "$out")"
-}
-
-########## 4. 导出私钥 ##########
-export_sec_key() {
-  local email out
-  read -rp "请输入要导出的邮箱/ID：" email
-  read -rp "保存文件名（默认 ${email}_sec.asc）：" out
-  [[ -z "$out" ]] && out="${email}_sec.asc"
-  gpg --armor --export-secret-keys "$email" > "$out"
-  warn "⚠️ 私钥已导出，请严格保密！路径：$(realpath "$out")"
-}
-
-########## 5. 删除密钥 ##########
-delete_key() {
-  local email
-  read -rp "请输入要删除的邮箱/ID：" email
-  gpg --delete-secret-and-public-keys "$email" 2>/dev/null \
-    && log "✅ 密钥已删除" \
-    || warn "删除失败（可能不存在或已取消）"
-}
-
-########## 6. 单个加密（文件/目录） ##########
-encrypt_single() {
-  local target recipient dir name
-  target=$(read_path "请输入要加密的文件/目录：")
-  read -rp "接收者邮箱：" recipient
-
-  dir=$(dirname "$target")
-  name=$(basename "$target")
-  cd "$dir"
-
-  if [[ -d "$name" ]]; then
-    info "检测到目录，自动打包加密..."
-    tar czf - "$name" | gpg -e -r "$recipient" -o "${name}.tar.gz.gpg"
-    log "✅ 加密完成：${name}.tar.gz.gpg"
-  else
-    gpg -e -r "$recipient" -o "${name}.gpg" "$name"
-    log "✅ 加密完成：${name}.gpg"
-  fi
-}
-
-########## 7. 单个解密 ##########
-decrypt_single() {
-  local gpg_file dir name
-  gpg_file=$(read_path "请输入 .gpg 加密文件路径：")
-  dir=$(dirname "$gpg_file")
-  name=$(basename "$gpg_file")
-  cd "$dir"
-
-  if [[ "$name" == *.tar.gz.gpg ]]; then
-    info "检测为目录包，自动解压还原..."
-    gpg -d "$name" | tar xzf -
-    log "✅ 目录解密解压完成"
-  else
-    local out="${name%.gpg}"
-    gpg -d "$name" > "$out"
-    log "✅ 文件解密完成：$out"
-  fi
-}
-
-########## 8. 批量加密（整个目录所有文件） ##########
-encrypt_batch() {
-  local src_dir recipient out_dir files count=0
-
-  src_dir=$(read_dir "请输入**待加密文件所在目录**：")
-  read -rp "接收者邮箱：" recipient
-  read -rp "请输入加密后输出目录（默认：./encrypted）：" out_dir
-  [[ -z "$out_dir" ]] && out_dir="./encrypted"
-  mkdir -p "$out_dir"
-  out_dir=$(realpath "$out_dir")
-
-  info "开始批量加密，目录：$src_dir"
-  files=("$src_dir"/*)
-
-  for item in "${files[@]}"; do
-    name=$(basename "$item")
-    if [[ -f "$item" && ! "$name" =~ \.gpg$ && ! "$name" =~ \.sig$ ]]; then
-      gpg -e -r "$recipient" -o "$out_dir/$name.gpg" "$item"
-      ((count++))
-      log "已加密：$name"
+    if [ ${#missing[@]} -gt 0 ]; then
+        err "缺少依赖：${missing[*]}"
+        info "请执行安装：sudo apt update && sudo apt install -y gnupg tar coreutils"
+        exit 1
     fi
-  done
-
-  log "✅ 批量加密完成！总计：$count 个文件 | 输出目录：$out_dir"
 }
 
-########## 9. 批量解密（整个目录所有 .gpg） ##########
-decrypt_batch() {
-  local src_dir out_dir files count=0
+# 安全读取路径（自动处理引号、空格、绝对路径、存在性检查）
+safe_read_path() {
+    local prompt="$1"
+    local path
 
-  src_dir=$(read_dir "请输入**存放 .gpg 文件的目录**：")
-  read -rp "请输入解密后输出目录（默认：./decrypted）：" out_dir
-  [[ -z "$out_dir" ]] && out_dir="./decrypted"
-  mkdir -p "$out_dir"
-  out_dir=$(realpath "$out_dir")
+    read -rp "$prompt" path
+    # 去除首尾引号
+    path="${path#\"}"
+    path="${path%\"}"
+    path="${path#\'}"
+    path="${path%\'}"
 
-  info "开始批量解密，目录：$src_dir"
-  files=("$src_dir"/*.gpg)
+    if [ ! -e "$path" ]; then
+        err "路径不存在：$path"
+        return 1
+    fi
 
-  for gpg_file in "${files[@]}"; do
-    [[ -f "$gpg_file" ]] || continue
-    name=$(basename "$gpg_file" .gpg)
-    gpg -d "$gpg_file" > "$out_dir/$name"
-    ((count++))
-    log "已解密：$name"
-  done
-
-  log "✅ 批量解密完成！总计：$count 个文件 | 输出目录：$out_dir"
+    realpath -s "$path"
+    return 0
 }
 
-########## 10. GPG 签名文件（单独签名） ##########
+# 安全读取目录
+safe_read_dir() {
+    local prompt="$1"
+    local dir
+
+    read -rp "$prompt" dir
+    dir="${dir#\"}"
+    dir="${dir%\"}"
+    dir="${dir#\'}"
+    dir="${dir%\'}"
+
+    if [ ! -d "$dir" ]; then
+        err "不是有效目录：$dir"
+        return 1
+    fi
+
+    realpath -s "$dir"
+    return 0
+}
+
+# 文件覆盖确认
+confirm_overwrite() {
+    local file="$1"
+    if [ -f "$file" ] || [ -d "$file" ]; then
+        read -rp "⚠️ 目标已存在：$file，是否覆盖？(y/N) " choice
+        case "$choice" in
+            [Yy]*) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+    return 0
+}
+
+# ==================== 密钥管理函数 ====================
+# 创建PGP密钥
+create_pgp_key() {
+    title "创建PGP密钥对"
+    info "将启动GPG官方密钥生成向导，按提示操作即可"
+    gpg --full-generate-key
+    log "密钥创建流程完成"
+}
+
+# 导入密钥
+import_pgp_key() {
+    title "导入PGP密钥"
+    local key_file
+    key_file=$(safe_read_path "请输入密钥文件路径（.asc/.gpg）：") || return 1
+
+    gpg --import "$key_file"
+    log "密钥导入成功"
+}
+
+# 导出公钥
+export_public_key() {
+    title "导出公钥"
+    local email output
+
+    read -rp "请输入密钥邮箱/ID：" email
+    [ -z "$email" ] && { err "邮箱/ID不能为空"; return 1; }
+
+    output="${email}_pub.asc"
+    read -rp "保存文件名（默认：$output）：" custom_output
+    [ -n "$custom_output" ] && output="$custom_output"
+
+    confirm_overwrite "$output" || return 1
+    gpg --armor --export "$email" > "$output"
+    log "公钥已导出：$(realpath "$output")"
+}
+
+# 导出私钥（高风险）
+export_secret_key() {
+    title "导出私钥（⚠️ 高风险操作）"
+    warn "私钥是最高机密，泄露将导致所有加密内容被破解！"
+    read -rp "确认要导出私钥？(y/N) " confirm
+    [ "$confirm" != "y" ] && { info "已取消操作"; return; }
+
+    local email output
+    read -rp "请输入密钥邮箱/ID：" email
+    [ -z "$email" ] && { err "邮箱/ID不能为空"; return 1; }
+
+    output="${email}_sec.asc"
+    read -rp "保存文件名（默认：$output）：" custom_output
+    [ -n "$custom_output" ] && output="$custom_output"
+
+    confirm_overwrite "$output" || return 1
+    gpg --armor --export-secret-keys "$email" > "$output"
+    warn "私钥已导出！请立即加密保存，切勿泄露：$(realpath "$output")"
+}
+
+# 删除密钥
+delete_pgp_key() {
+    title "删除密钥"
+    warn "此操作不可恢复！"
+    local email
+    read -rp "请输入要删除的邮箱/ID：" email
+    [ -z "$email" ] && { err "邮箱/ID不能为空"; return 1; }
+
+    gpg --delete-secret-and-public-keys "$email"
+    log "密钥删除操作完成"
+}
+
+# 列出所有密钥
+list_all_keys() {
+    title "PGP密钥列表"
+    echo -e "\n${BLUE}【公钥列表】${NC}"
+    gpg --list-keys
+    echo -e "\n${BLUE}【私钥列表】${NC}"
+    gpg --list-secret-keys
+}
+
+# ==================== 加解密/签名函数 ====================
+# 单个加密（支持文件/目录）
+encrypt_single() {
+    title "单个文件/目录加密"
+    local target recipient
+
+    target=$(safe_read_path "请输入要加密的文件/目录：") || return 1
+    read -rp "接收者邮箱：" recipient
+    [ -z "$recipient" ] && { err "接收者不能为空"; return 1; }
+
+    local dir=$(dirname "$target")
+    local name=$(basename "$target")
+    cd "$dir" || return 1
+
+    if [ -d "$name" ]; then
+        info "检测到目录，自动打包加密..."
+        local output="${name}.tar.gz.gpg"
+        confirm_overwrite "$output" || return 1
+        tar czf - "$name" | gpg -e -r "$recipient" -o "$output"
+        log "目录加密完成：$output"
+    else
+        local output="${name}.gpg"
+        confirm_overwrite "$output" || return 1
+        gpg -e -r "$recipient" -o "$output" "$name"
+        log "文件加密完成：$output"
+    fi
+}
+
+# 单个解密
+decrypt_single() {
+    title "单个文件解密"
+    local gpg_file
+
+    gpg_file=$(safe_read_path "请输入 .gpg 加密文件路径：") || return 1
+    local dir=$(dirname "$gpg_file")
+    local name=$(basename "$gpg_file")
+    cd "$dir" || return 1
+
+    if [[ "$name" == *.tar.gz.gpg ]]; then
+        info "检测为目录加密包，自动解压还原..."
+        gpg -d "$name" | tar xzf -
+        log "目录解密解压完成"
+    else
+        local output="${name%.gpg}"
+        confirm_overwrite "$output" || return 1
+        gpg -d "$name" > "$output"
+        log "文件解密完成：$output"
+    fi
+}
+
+# 批量加密
+batch_encrypt() {
+    title "批量文件加密"
+    local src_dir recipient out_dir count=0
+
+    src_dir=$(safe_read_dir "请输入待加密文件目录：") || return 1
+    read -rp "接收者邮箱：" recipient
+    [ -z "$recipient" ] && { err "接收者不能为空"; return 1; }
+
+    read -rp "输出目录（默认 ./encrypted）：" out_dir
+    out_dir=${out_dir:-./encrypted}
+    mkdir -p "$out_dir"
+    out_dir=$(realpath "$out_dir")
+
+    info "开始批量加密：$src_dir -> $out_dir"
+    for item in "$src_dir"/*; do
+        [ ! -f "$item" ] && continue
+        local filename=$(basename "$item")
+        [[ "$filename" =~ \.(gpg|sig)$ ]] && continue
+
+        local output="$out_dir/$filename.gpg"
+        gpg -e -r "$recipient" -o "$output" "$item"
+        ((count++))
+        log "已加密：$filename"
+    done
+
+    log "批量加密完成！总计 $count 个文件 | 输出目录：$out_dir"
+}
+
+# 批量解密
+batch_decrypt() {
+    title "批量文件解密"
+    local src_dir out_dir count=0
+
+    src_dir=$(safe_read_dir "请输入 .gpg 文件目录：") || return 1
+    read -rp "输出目录（默认 ./decrypted）：" out_dir
+    out_dir=${out_dir:-./decrypted}
+    mkdir -p "$out_dir"
+    out_dir=$(realpath "$out_dir")
+
+    info "开始批量解密：$src_dir -> $out_dir"
+    for gpg_file in "$src_dir"/*.gpg; do
+        [ ! -f "$gpg_file" ] && continue
+        local filename=$(basename "$gpg_file" .gpg)
+        local output="$out_dir/$filename"
+
+        gpg -d "$gpg_file" > "$output"
+        ((count++))
+        log "已解密：$filename"
+    done
+
+    log "批量解密完成！总计 $count 个文件 | 输出目录：$out_dir"
+}
+
+# 单独签名文件
 sign_file() {
-  local file signer out
-  file=$(read_path "请输入要签名的文件：")
-  read -rp "请输入签名者邮箱（你的私钥邮箱）：" signer
-  out="${file}.sig"
-  gpg --detach-sign -u "$signer" -o "$out" "$file"
-  log "✅ 签名完成：$out"
-  warn "⚠️ 请把【原文件 + .sig 签名文件】一起发给对方验证"
+    title "文件签名（生成 .sig）"
+    local file signer
+
+    file=$(safe_read_path "请输入要签名的文件：") || return 1
+    read -rp "签名者邮箱（你的私钥）：" signer
+    [ -z "$signer" ] && { err "签名者不能为空"; return 1; }
+
+    local output="${file}.sig"
+    confirm_overwrite "$output" || return 1
+    gpg --detach-sign -u "$signer" -o "$output" "$file"
+    log "签名完成：$output"
+    warn "请将【原文件 + .sig】一起发送给对方验证"
 }
 
-########## 11. GPG 验证签名 ##########
-verify_sign() {
-  local file
-  file=$(read_path "请输入原文件（会自动找 .sig）：")
-  info "正在验证签名有效性..."
-  if gpg --verify "${file}.sig" "$file"; then
-    log "✅ 验证通过！文件未篡改，签名有效"
-  else
-    err "❌ 验证失败！文件被篡改或签名无效"
-  fi
+# 验证签名
+verify_signature() {
+    title "验证文件签名"
+    local file
+
+    file=$(safe_read_path "请输入原文件（自动匹配 .sig）：") || return 1
+    info "正在验证签名..."
+
+    if gpg --verify "${file}.sig" "$file"; then
+        log "验证通过 ✅ 文件完整、签名有效"
+    else
+        err "验证失败 ❌ 文件被篡改或签名无效"
+    fi
 }
 
-########## 12. 签名 + 加密（最安全） ##########
-sign_encrypt() {
-  local file recipient signer out
-  file=$(read_path "请输入要签名加密的文件：")
-  read -rp "签名者邮箱（你）：" signer
-  read -rp "接收者邮箱（对方）：" recipient
-  out="${file}.gpg"
-  gpg -u "$signer" -e -r "$recipient" -s -o "$out" "$file"
-  log "✅ 已签名并加密：$out"
+# 签名+加密（最安全）
+sign_and_encrypt() {
+    title "签名+加密（推荐）"
+    local file signer recipient
+
+    file=$(safe_read_path "请输入文件：") || return 1
+    read -rp "签名者邮箱（你）：" signer
+    read -rp "接收者邮箱（对方）：" recipient
+    [ -z "$signer" ] || [ -z "$recipient" ] && { err "信息不能为空"; return 1; }
+
+    local output="${file}.gpg"
+    confirm_overwrite "$output" || return 1
+    gpg -u "$signer" -e -r "$recipient" -s -o "$output" "$file"
+    log "已完成签名+加密：$output"
 }
 
-########## 13. 解密 + 验签（完整验证） ##########
-decrypt_verify() {
-  local file out
-  file=$(read_path "请输入 .gpg 加密签名文件：")
-  out="${file%.gpg}"
-  info "正在解密并验证签名..."
-  if gpg -d -o "$out" "$file"; then
-    log "✅ 解密成功 + 签名验证通过"
-  else
-    err "❌ 解密或验签失败"
-  fi
+# 解密+验签
+decrypt_and_verify() {
+    title "解密+验签"
+    local file
+
+    file=$(safe_read_path "请输入加密签名文件：") || return 1
+    local output="${file%.gpg}"
+    confirm_overwrite "$output" || return 1
+
+    info "正在解密并验证签名..."
+    if gpg -d -o "$output" "$file"; then
+        log "操作成功 ✅ 解密完成 + 签名有效"
+    else
+        err "操作失败 ❌ 解密或验签未通过"
+    fi
 }
 
-########## 14. 查看密钥 ##########
-list_keys() {
-  echo -e "\n${BLUE}====== 公钥列表 ======${NC}"
-  gpg --list-keys
-  echo -e "\n${BLUE}====== 私钥列表 ======${NC}"
-  gpg --list-secret-keys
+# ==================== 主菜单 ====================
+show_menu() {
+    clear
+    echo -e "${PURPLE}================================================${NC}"
+    echo -e "            PGP 密钥/文件管理工具（增强版）"
+    echo -e "${PURPLE}================================================${NC}"
+    echo "1) 创建PGP密钥对     2) 导入密钥        3) 导出公钥"
+    echo "4) 导出私钥          5) 删除密钥        6) 单个加密"
+    echo "7) 单个解密          8) 批量加密        9) 批量解密"
+    echo "10) 单独文件签名     11) 验证签名       12) 签名+加密"
+    echo "13) 解密+验签        14) 查看所有密钥   15) 退出程序"
+    echo -e "${PURPLE}================================================${NC}"
 }
 
-########## 主菜单 ##########
-while true; do
-  echo -e "\n${BLUE}======== PGP 中文管家（终极签名版）========${NC}"
-  echo "1) 创建新密钥"
-  echo "2) 导入密钥"
-  echo "3) 导出公钥"
-  echo "4) 导出私钥"
-  echo "5) 删除密钥"
-  echo "6) 单个加密（文件/目录）"
-  echo "7) 单个解密"
-  echo "8) 批量加密"
-  echo "9) 批量解密"
-  echo "10) 单独签名文件（生成 .sig）"
-  echo "11) 验证文件签名"
-  echo "12) 签名+加密一体（最安全）"
-  echo "13) 解密+验签一体"
-  echo "14) 查看所有密钥"
-  echo "15) 退出"
-  read -rp "请选择操作（1-15）：" choice
+main() {
+    check_dependencies
+    log "PGP管理工具启动成功！"
+    sleep 1
 
-  case $choice in
-    1) create_key ;;
-    2) import_key ;;
-    3) export_pub_key ;;
-    4) export_sec_key ;;
-    5) delete_key ;;
-    6) encrypt_single ;;
-    7) decrypt_single ;;
-    8) encrypt_batch ;;
-    9) decrypt_batch ;;
-    10) sign_file ;;
-    11) verify_sign ;;
-    12) sign_encrypt ;;
-    13) decrypt_verify ;;
-    14) list_keys ;;
-    15) log "👋 再见！"; exit 0 ;;
-    *) err "请输入 1-15 之间的数字" ;;
-  esac
-done
+    while true; do
+        show_menu
+        read -rp "请选择操作 [1-15]：" choice
+
+        case $choice in
+            1) create_pgp_key ;;
+            2) import_pgp_key ;;
+            3) export_public_key ;;
+            4) export_secret_key ;;
+            5) delete_pgp_key ;;
+            6) encrypt_single ;;
+            7) decrypt_single ;;
+            8) batch_encrypt ;;
+            9) batch_decrypt ;;
+            10) sign_file ;;
+            11) verify_signature ;;
+            12) sign_and_encrypt ;;
+            13) decrypt_and_verify ;;
+            14) list_all_keys ;;
+            15) log "感谢使用，再见！👋"; exit 0 ;;
+            *) err "无效输入，请输入 1-15 的数字" ;;
+        esac
+
+        echo -e "\n按回车键继续..."
+        read -r
+    done
+}
+
+# 启动主程序
+main
